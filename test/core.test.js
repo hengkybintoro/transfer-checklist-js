@@ -245,3 +245,38 @@ test('data/index.json bawaan valid', async () => {
   const text = await readFile(new URL('../data/index.json', import.meta.url), 'utf8');
   assert.deepEqual(c.parseIndex(text), []);
 });
+
+test('kalender: addDays & addMonths', () => {
+  assert.equal(c.addDays('2026-10-31', 1), '2026-11-01');
+  assert.equal(c.addDays('2026-01-01', -1), '2025-12-31');
+  assert.equal(c.addDays('2028-02-28', 1), '2028-02-29');
+  assert.equal(c.addDays('2026-10-18', 7), '2026-10-25');
+  assert.equal(c.addMonths('2026-01-31', 1), '2026-02-28');
+  assert.equal(c.addMonths('2028-01-31', 1), '2028-02-29');
+  assert.equal(c.addMonths('2026-12-15', 1), '2027-01-15');
+  assert.equal(c.addMonths('2026-01-15', -1), '2025-12-15');
+  assert.equal(c.addMonths('2026-03-31', -13), '2025-02-28');
+});
+
+test('kalender: monthGrid mulai Senin dan lengkap', () => {
+  // 1 Okt 2026 hari Kamis -> tiga sel kosong di depan
+  const g = c.monthGrid(2026, 10);
+  assert.ok(g.every((w) => w.length === 7));
+  assert.deepEqual(g[0].slice(0, 4), [null, null, null, '2026-10-01']);
+  assert.equal(g.flat().filter(Boolean).length, 31);
+  assert.equal(g.flat().filter(Boolean).at(-1), '2026-10-31');
+  // Februari 2027 mulai Senin, 28 hari: tepat 4 pekan
+  const f = c.monthGrid(2027, 2);
+  assert.equal(f.length, 4);
+  assert.equal(f[0][0], '2027-02-01');
+  // 1 Mei 2026 Jumat; 1 Feb 2026 Minggu -> enam sel? 6 kosong di depan
+  assert.equal(c.monthGrid(2026, 2)[0].filter((x) => x === null).length, 6);
+  for (const iso of c.monthGrid(2028, 2).flat().filter(Boolean)) assert.ok(c.isDate(iso));
+});
+
+test('kalender: label', () => {
+  assert.equal(c.dateLong('2026-10-18'), '18 Oktober 2026');
+  assert.equal(c.WEEKDAYS_SHORT[0], 'Sen');
+  assert.equal(c.daysInMonth(2028, 2), 29);
+  assert.equal(c.daysInMonth(2026, 2), 28);
+});

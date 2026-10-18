@@ -6,6 +6,7 @@ import {
   buildIndex, toCSV, rupiah, dateID, dateTimeID, STATUSES, statusLabel,
 } from './core.js';
 import { h, download } from './dom.js';
+import { datePicker } from './datepicker.js';
 import {
   config, tz, today, loadPublished, flash, go, stateChip, statusChip, periodText, statsStrip, field, notFound, errorBox,
 } from './ui.js';
@@ -243,8 +244,12 @@ export async function renderEventForm(id) {
 
   const err = h('div', { class: 'flash err', role: 'alert', hidden: true });
   const name = h('input', { type: 'text', id: 'e-name', maxlength: '100', required: true, value: editing?.name ?? '' });
-  const start = h('input', { type: 'date', id: 'e-start', required: true, value: editing?.start_date ?? today() });
-  const end = h('input', { type: 'date', id: 'e-end', required: true, value: editing?.end_date ?? '' });
+  // Tanggal dipilih lewat kalender. Tanggal selesai tidak boleh sebelum tanggal mulai, dan ikut maju bila mulai digeser melewatinya.
+  const start = datePicker({
+    id: 'e-start', value: editing?.start_date ?? today(), today,
+    onchange: (v) => { if (end.value && end.value < v) end.value = v; },
+  });
+  const end = datePicker({ id: 'e-end', value: editing?.end_date ?? '', today, min: () => start.value, range: () => start.value || null });
   const desc = h('textarea', { id: 'e-desc', maxlength: '1000' });
   desc.value = editing?.description ?? '';
 
@@ -253,8 +258,8 @@ export async function renderEventForm(id) {
     err,
     field('Nama event', name, null, 'e-name'),
     h('div', { class: 'fields-2' },
-      field('Tanggal mulai input', start, 'Inklusif.', 'e-start'),
-      field('Tanggal selesai input', end, 'Inklusif. Setelah tanggal ini event otomatis tertutup.', 'e-end')),
+      field('Tanggal mulai input', start.el, 'Klik untuk memilih dari kalender. Inklusif.', 'e-start'),
+      field('Tanggal selesai input', end.el, 'Klik untuk memilih dari kalender. Inklusif; setelah tanggal ini event otomatis tertutup.', 'e-end')),
     field('Deskripsi / info rekening', desc, 'Ditampilkan di halaman event (publik).', 'e-desc'),
     h('div', { class: 'row' },
       h('button', { class: 'btn primary', type: 'submit' }, 'Simpan'),

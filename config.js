@@ -11,7 +11,7 @@ export default {
     // SHA-256 dari password admin (64 karakter hex). Buat dengan:
     //   printf '%s' 'password-anda' | shasum -a 256
     // Nilai di bawah hanya contoh dan MENOLAK login sampai Anda menggantinya.
-    password_sha256: 'irene710',
+    password_sha256: 'b6596e8c458b71dcb89236a9762dcde8a1ea99992cec62a12bd627d34d7d9e30',
   },
 
   // Masa berlaku sesi admin di browser (jam).

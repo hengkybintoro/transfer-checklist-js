@@ -49,6 +49,50 @@ export function dateID(s) {
   return `${d} ${MONTHS[m - 1]} ${y}`;
 }
 
+// ----- bantuan kalender (untuk pemilih tanggal) -----
+
+export const MONTHS_LONG = Object.freeze(['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']);
+export const WEEKDAYS_SHORT = Object.freeze(['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']); // pekan dimulai Senin
+
+const pad2 = (n) => String(n).padStart(2, '0');
+export const makeDate = (y, m, d) => `${String(y).padStart(4, '0')}-${pad2(m)}-${pad2(d)}`;
+export const parseDateParts = (iso) => iso.split('-').map(Number); // [y, m, d]
+export const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+/** Menggeser tanggal ISO sebanyak n hari (bisa negatif). */
+export function addDays(iso, n) {
+  const [y, m, d] = parseDateParts(iso);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return makeDate(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+
+/** Menggeser n bulan; hari dipangkas bila bulan tujuan lebih pendek (31 Jan + 1 bulan = 28/29 Feb). */
+export function addMonths(iso, n) {
+  const [y, m, d] = parseDateParts(iso);
+  const total = y * 12 + (m - 1) + n;
+  const ny = Math.floor(total / 12);
+  const nm = (total % 12) + 1;
+  return makeDate(ny, nm, Math.min(d, daysInMonth(ny, nm)));
+}
+
+/** Kisi bulan: array pekan (Senin–Minggu); tiap sel berupa tanggal ISO atau null untuk sel kosong. */
+export function monthGrid(year, month) {
+  const lead = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+  const cells = Array(lead).fill(null);
+  for (let d = 1; d <= daysInMonth(year, month); d++) cells.push(makeDate(year, month, d));
+  while (cells.length % 7) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+/** Contoh: "18 Oktober 2026" (dipakai sebagai label aksesibilitas). */
+export function dateLong(iso) {
+  if (!isDate(iso)) return iso;
+  const [y, m, d] = parseDateParts(iso);
+  return `${d} ${MONTHS_LONG[m - 1]} ${y}`;
+}
+
 export function dateTimeID(iso, tz) {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return iso;
