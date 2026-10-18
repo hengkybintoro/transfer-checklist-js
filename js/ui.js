@@ -1,5 +1,5 @@
 // Bagian tampilan bersama: konfigurasi, layout, flash, chip, dan cache data terbit.
-import config from '../config.js';
+import config from './settings.js';
 import { todayIn, eventState, STATE_LABEL, statusLabel, rupiah, dateID } from './core.js';
 import { fetchPublished } from './api.js';
 import { h } from './dom.js';

@@ -1,6 +1,6 @@
 // Mode aplikasi. "server" bila disajikan oleh server Node.js (yang menghasilkan config.js dengan mode: 'server');
 // selain itu mode statis untuk GitHub Pages (data dari file JSON + kode kirim).
-import config from '../config.js';
+import config from './settings.js';
 import { UserError } from './core.js';
 
 export const isServer = config.mode === 'server';

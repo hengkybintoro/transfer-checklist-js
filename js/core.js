@@ -517,7 +517,7 @@ export function safeEqual(a, b) {
 export function configProblem(cfg) {
   const a = cfg?.admin ?? {};
   if (!a.username || !/^[a-f0-9]{64}$/.test(a.password_sha256 ?? '')) {
-    return 'Login admin belum diatur. Isi admin.username dan admin.password_sha256 di config.js (lihat README).';
+    return 'Login admin belum diatur. Isi admin.username dan admin.password_sha256 di config.js (lihat README). Bila sudah diisi dan di-push, tunggu ±1–2 menit lalu muat ulang paksa halaman (Cmd/Ctrl+Shift+R).';
   }
   try { new Intl.DateTimeFormat('en-US', { timeZone: cfg.timezone }); } catch { return `Zona waktu "${cfg.timezone}" tidak dikenal.`; }
   return '';

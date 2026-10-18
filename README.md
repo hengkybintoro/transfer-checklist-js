@@ -144,7 +144,7 @@ Di mode ini, **`config.js` bersifat publik**. Login admin memakai hash SHA-256 p
 printf '%s' 'password-anda' | shasum -a 256
 ```
 
-Salin hasilnya ke `admin.password_sha256` (selama masih berisi nilai contoh, login menolak). Opsi lain di `config.js`: `timezone`, `session_hours`, `admin_whatsapp` (mis. `6281234567890`), `repo_url`. Buka `…/#/admin`.
+Salin hasilnya ke `admin.password_sha256` (selama masih berisi nilai contoh, login menolak). Setelah `git push`, tunggu ±1–2 menit sampai Pages selesai deploy; bila halaman login masih menampilkan "belum diatur", muat ulang paksa (Cmd/Ctrl+Shift+R) atau buka jendela privat. Opsi lain di `config.js`: `timezone`, `session_hours`, `admin_whatsapp` (mis. `6281234567890`), `repo_url`. Buka `…/#/admin`.
 
 > `config.json` (mode Node.js) tidak ikut terbit karena ada di `.gitignore`, dan server tidak pernah menyajikannya.
 
