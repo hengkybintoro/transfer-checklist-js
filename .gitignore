@@ -1,5 +1,9 @@
+# Rahasia server (mode Node.js): JANGAN pernah di-commit
+config.json
 node_modules/
 .DS_Store
 .idea/
 .vscode/
 *.log
+*.tmp
+*.bak

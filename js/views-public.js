@@ -4,8 +4,9 @@ import {
   rupiah, dateID, dateTimeID, UserError,
 } from './core.js';
 import { h, copyText } from './dom.js';
-import { config, tz, today, loadPublished, stateChip, statusChip, periodText, statsStrip, field, notFound } from './ui.js';
+import { config, tz, today, loadPublished, stateChip, statusChip, periodText, statsStrip, field, notFound, flash } from './ui.js';
 import { myEntries, addMyEntry, removeMyEntry } from './storage.js';
+import { isServer, serverApi } from './mode.js';
 
 let justSubmitted = null; // id entri yang baru dikirim (menampilkan panel kode kirim)
 
@@ -96,6 +97,7 @@ function entryForm(ev, rerender) {
   const name = h('input', { type: 'text', id: 'f-name', name: 'name', maxlength: '80', required: true, autocomplete: 'name' });
   const amount = h('input', { type: 'text', id: 'f-amount', name: 'amount', inputmode: 'numeric', required: true, placeholder: 'mis. 1.500.000', autocomplete: 'off' });
   const date = h('input', { type: 'date', id: 'f-date', name: 'transfer_date', required: true, max: t, value: t });
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, 'Simpan entri');
   const form = h('form', { novalidate: true, class: 'card' },
     h('h2', null, 'Catat transfer'),
     err,
@@ -103,25 +105,34 @@ function entryForm(ev, rerender) {
     h('div', { class: 'fields-2' },
       field('Nominal (Rp)', amount, 'Angka bulat, contoh 1500000 atau 1.500.000.', 'f-amount'),
       field('Tanggal transfer', date, null, 'f-date')),
-    h('button', { class: 'btn primary', type: 'submit' }, 'Simpan entri'),
-    h('p', { class: 'hint', style: 'margin-top:12px' },
-      'Entri disimpan di perangkat Anda dan menghasilkan kode kirim. Teruskan kode itu ke admin supaya tercatat dan diverifikasi.'));
-  form.addEventListener('submit', (e) => {
+    submit,
+    h('p', { class: 'hint', style: 'margin-top:12px' }, isServer
+      ? 'Entri langsung tercatat dengan status Menunggu, lalu diverifikasi admin terhadap mutasi rekening.'
+      : 'Entri disimpan di perangkat Anda dan menghasilkan kode kirim. Teruskan kode itu ke admin supaya tercatat dan diverifikasi.'));
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.hidden = true;
+    submit.disabled = true;
     try {
       const reason = submitBlockReason(ev, today());
       if (reason) throw new UserError(reason);
       const v = validateEntryInput({ name: name.value, amount: amount.value, transfer_date: date.value }, today());
-      const entry = newEntry(v, today());
-      addMyEntry({ eventId: ev.id, id: entry.id, name: entry.name, amount: entry.amount, transfer_date: entry.transfer_date, submitted_at: entry.submitted_at, code: encodeEntryCode(ev.id, entry) });
-      justSubmitted = entry.id;
+      if (isServer) {
+        // server memeriksa ulang semua aturan (periode memakai jam server)
+        await serverApi('POST', `events/${ev.id}/entries`, { name: name.value, amount: amount.value, transfer_date: date.value });
+        flash('ok', 'Entri tercatat dengan status Menunggu. Admin akan memverifikasinya terhadap mutasi rekening.');
+      } else {
+        const entry = newEntry(v, today());
+        addMyEntry({ eventId: ev.id, id: entry.id, name: entry.name, amount: entry.amount, transfer_date: entry.transfer_date, submitted_at: entry.submitted_at, code: encodeEntryCode(ev.id, entry) });
+        justSubmitted = entry.id;
+      }
       rerender();
     } catch (x) {
       if (!(x instanceof UserError)) throw x;
       err.textContent = x.message;
       err.hidden = false;
       err.scrollIntoView({ block: 'nearest' });
+      submit.disabled = false;
     }
   });
   return form;
@@ -158,11 +169,13 @@ export async function renderEvent(id, { rerender }) {
     h('p', { class: 'muted' }, `Periode input: ${periodText(ev)}`),
     ev.description ? h('div', { class: 'card pre' }, ev.description) : null,
     state === 'open' ? entryForm(ev, rerender) : h('div', { class: 'flash warn', role: 'status' }, reason),
-    mineCard(ev, rerender),
+    isServer ? null : mineCard(ev, rerender),
     h('div', { class: 'row between' }, h('h2', null, 'Daftar entri'),
       h('button', { class: 'btn sm', type: 'button', onclick: async () => { await loadPublished(true); rerender(); } }, 'Muat ulang')),
     statsStrip(summary(ev)),
     entriesTable(ev),
-    h('p', { class: 'muted small' }, 'Daftar ini diperbarui setiap admin menerbitkan data terbaru. Catatan admin hanya ditampilkan untuk entri tidak valid.'),
+    h('p', { class: 'muted small' }, isServer
+      ? 'Catatan admin hanya ditampilkan untuk entri tidak valid.'
+      : 'Daftar ini diperbarui setiap admin menerbitkan data terbaru. Catatan admin hanya ditampilkan untuk entri tidak valid.'),
   ];
 }

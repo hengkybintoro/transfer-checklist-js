@@ -3,17 +3,24 @@ import config from '../config.js';
 import { todayIn, eventState, STATE_LABEL, statusLabel, rupiah, dateID } from './core.js';
 import { fetchPublished } from './api.js';
 import { h } from './dom.js';
-import { getSession, clearSession } from './storage.js';
+import { isServer } from './mode.js';
+import { currentSession, logout } from './session.js';
 
 export { config };
 export const tz = config.timezone || 'Asia/Jakarta';
-export const today = () => todayIn(tz);
 export const appName = config.app_name || 'Transfer Checklist';
 
-// ----- data terbit (di-cache selama sesi halaman) -----
+// Mode server memakai tanggal server (bukan jam perangkat) untuk menentukan periode.
+let serverToday = null;
+export const today = () => serverToday ?? todayIn(tz);
+
+// ----- data event: mode statis di-cache selama sesi halaman; mode server selalu diambil ulang -----
 let pubCache = null;
 export async function loadPublished(force = false) {
-  if (!pubCache || force) pubCache = await fetchPublished();
+  if (!pubCache || force || isServer) {
+    pubCache = await fetchPublished();
+    if (pubCache.today) serverToday = pubCache.today;
+  }
   return pubCache;
 }
 
@@ -58,11 +65,11 @@ export function field(label, input, hint, id) {
 
 // ----- kerangka halaman -----
 export function layout(content, { admin = false, keepFlash = false } = {}) {
-  const session = getSession();
+  const session = currentSession();
   const nav = h('nav', { 'aria-label': 'Navigasi' },
     admin && session ? [
       h('a', { class: 'btn sm', href: '#/admin' }, 'Dashboard'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => { clearSession(); flash('ok', 'Anda sudah keluar.'); go('#/'); } }, `Keluar (${session.u})`),
+      h('button', { class: 'btn sm', type: 'button', onclick: async () => { await logout(); flash('ok', 'Anda sudah keluar.'); go('#/'); } }, `Keluar (${session.u})`),
     ] : null);
   const header = h('header', { class: 'site' }, h('div', { class: 'container' },
     h('a', { class: 'brand', href: '#/' }, appName), nav));

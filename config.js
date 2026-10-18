@@ -7,11 +7,11 @@ export default {
   timezone: 'Asia/Jakarta',
 
   admin: {
-    username: 'admin',
+    username: 'irene',
     // SHA-256 dari password admin (64 karakter hex). Buat dengan:
     //   printf '%s' 'password-anda' | shasum -a 256
     // Nilai di bawah hanya contoh dan MENOLAK login sampai Anda menggantinya.
-    password_sha256: 'ganti-dengan-hash-sha256-password-anda',
+    password_sha256: 'irene710',
   },
 
   // Masa berlaku sesi admin di browser (jam).
@@ -19,7 +19,7 @@ export default {
 
   // Opsional: nomor WhatsApp admin (format internasional tanpa +, mis. '6281234567890').
   // Bila diisi, tombol "Kirim lewat WhatsApp" langsung membuka chat ke admin.
-  admin_whatsapp: '',
+  admin_whatsapp: '62851233175800',
 
   // Opsional: tautan "Kode sumber" di footer.
   repo_url: '',

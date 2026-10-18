@@ -2,7 +2,7 @@
 import { validId, UserError } from './core.js';
 import { h, clear } from './dom.js';
 import { layout, notFound, errorBox, appName } from './ui.js';
-import { getSession } from './storage.js';
+import { currentSession, initSession } from './session.js';
 import { renderHome, renderEvent } from './views-public.js';
 import { renderLogin, renderDashboard, renderEventForm, renderAdminEvent, setAfterLogin } from './views-admin.js';
 
@@ -39,7 +39,7 @@ async function render() {
   const route = resolve(hash);
 
   if (route.admin) {
-    const session = getSession();
+    const session = currentSession();
     if (route.public) {
       if (session) { location.hash = '#/admin'; return; }
     } else if (!session) {
@@ -66,4 +66,5 @@ async function render() {
 }
 
 window.addEventListener('hashchange', render);
+await initSession(); // mode server: tanyakan ke server apakah sudah login
 render();

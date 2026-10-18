@@ -1,10 +1,13 @@
 {
   "name": "transfer-checklist-js",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Transfer Checklist versi JavaScript statis untuk GitHub Pages",
+  "description": "Transfer Checklist: jalan di Node.js (server + JSON) atau statis di GitHub Pages",
   "scripts": {
+    "init": "node server.js --init",
+    "start": "node server.js",
+    "dev": "node --watch server.js",
     "test": "node --test",
     "serve": "python3 -m http.server 8080"
   },

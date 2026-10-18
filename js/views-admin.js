@@ -10,18 +10,23 @@ import {
   config, tz, today, loadPublished, flash, go, stateChip, statusChip, periodText, statsStrip, field, notFound, errorBox,
 } from './ui.js';
 import {
-  adminEvents, saveAdminEvent, removeAdminEvent, getSession, setSession, getLock, setLock, isPersistent,
+  adminEvents, saveAdminEvent, removeAdminEvent, setSession, getLock, setLock, isPersistent,
 } from './storage.js';
+import { isServer, serverApi } from './mode.js';
+import { currentSession, serverLogin } from './session.js';
 
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
 
 // ---------- salinan kerja ----------
+// Mode statis: salinan kerja admin ada di localStorage lalu "diterbitkan" lewat file JSON.
+// Mode server: tidak ada salinan lokal; semua perubahan langsung ke API server.
 
-const working = (id, pub) => adminEvents().get(id) ?? pub.byId.get(id) ?? null;
+const localEvents = () => (isServer ? new Map() : adminEvents());
+const working = (id, pub) => localEvents().get(id) ?? pub.byId.get(id) ?? null;
 
 function publishState(id, pub) {
-  const local = adminEvents().get(id);
+  const local = localEvents().get(id);
   const published = pub.byId.get(id);
   if (!published) return { key: 'new', label: 'Belum pernah diterbitkan', cls: 'warn' };
   if (!local) return { key: 'same', label: 'Sama dengan versi terbit', cls: 'open' };
@@ -31,7 +36,7 @@ function publishState(id, pub) {
 }
 
 function allIds(pub) {
-  return [...new Set([...adminEvents().keys(), ...pub.byId.keys()])];
+  return [...new Set([...localEvents().keys(), ...pub.byId.keys()])];
 }
 
 function mutate(id, pub, fn) {
@@ -43,12 +48,33 @@ function mutate(id, pub, fn) {
 }
 
 /** Menjalankan aksi; UserError diubah menjadi pesan flash lalu halaman digambar ulang. */
-function act(rerender, fn) {
-  try { fn(); } catch (e) {
+async function act(rerender, fn) {
+  try { await fn(); } catch (e) {
     if (!(e instanceof UserError)) throw e;
     flash('err', e.message);
   }
   rerender();
+}
+
+// Operasi data: mode server -> API, mode statis -> salinan lokal.
+const entryUrl = (ev, id) => `admin/events/${ev.id}/entries${id ? `/${id}` : ''}`;
+
+async function doSetStatus(ev, pub, entryId, status, note) {
+  if (isServer) await serverApi('POST', `${entryUrl(ev, entryId)}/status`, { status, note });
+  else mutate(ev.id, pub, (cur) => setStatus(cur, entryId, status, note));
+}
+
+async function doDeleteEntry(ev, pub, entryId) {
+  if (isServer) await serverApi('DELETE', entryUrl(ev, entryId));
+  else mutate(ev.id, pub, (cur) => deleteEntry(cur, entryId));
+}
+
+async function doAddEntry(ev, pub, input) {
+  if (isServer) {
+    await serverApi('POST', entryUrl(ev), input);
+  } else {
+    mutate(ev.id, pub, (cur) => ({ ...cur, entries: [...cur.entries, newEntry(input, today())] }));
+  }
 }
 
 // ---------- login ----------
@@ -57,7 +83,7 @@ let afterLogin = '#/admin';
 export const setAfterLogin = (hash) => { afterLogin = typeof hash === 'string' && hash.startsWith('#/admin') && !hash.startsWith('#/admin/login') ? hash : '#/admin'; };
 
 export function renderLogin() {
-  const problem = configProblem(config);
+  const problem = isServer ? '' : configProblem(config);
   const err = h('div', { class: 'flash err', role: 'alert', hidden: true });
   const user = h('input', { type: 'text', id: 'l-user', name: 'username', autocomplete: 'username', required: true });
   const pass = h('input', { type: 'password', id: 'l-pass', name: 'password', autocomplete: 'current-password', required: true });
@@ -71,12 +97,27 @@ export function renderLogin() {
     field('Username', user, null, 'l-user'),
     field('Password', pass, null, 'l-pass'),
     submit,
-    h('p', { class: 'hint', style: 'margin-top:12px' }, 'Login ini hanya gerbang tampilan di browser Anda. Yang benar-benar melindungi data adalah akses tulis ke repositori GitHub.'));
+    isServer ? null : h('p', { class: 'hint', style: 'margin-top:12px' }, 'Login ini hanya gerbang tampilan di browser Anda. Yang benar-benar melindungi data adalah akses tulis ke repositori GitHub.'));
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.hidden = true;
     if (problem) return;
+    if (isServer) {
+      submit.disabled = true;
+      try {
+        await serverLogin(user.value.trim(), pass.value);
+        flash('ok', 'Berhasil masuk.');
+        go(afterLogin);
+      } catch (x) {
+        if (!(x instanceof UserError)) throw x;
+        show(x.message);
+      } finally {
+        submit.disabled = false;
+        pass.value = '';
+      }
+      return;
+    }
     const lock = getLock();
     if (lock.until > Date.now()) {
       show(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil((lock.until - Date.now()) / 60000)} menit.`);
@@ -150,23 +191,25 @@ export async function renderDashboard({ rerender }) {
 
   return [
     h('div', { class: 'row between' }, h('h1', null, 'Dashboard Admin')),
-    isPersistent() ? null : h('div', { class: 'flash warn', role: 'alert' }, 'Penyimpanan browser tidak tersedia (mode privat?). Perubahan akan hilang saat halaman ditutup — unduh file JSON sebelum keluar.'),
-    pub.errors.length ? h('div', { class: 'flash warn' }, `Event terbit yang gagal dimuat: ${pub.errors.map((e) => `${e.id} (${e.message})`).join('; ')}.`) : null,
+    isServer || isPersistent() ? null : h('div', { class: 'flash warn', role: 'alert' }, 'Penyimpanan browser tidak tersedia (mode privat?). Perubahan akan hilang saat halaman ditutup — unduh file JSON sebelum keluar.'),
+    pub.errors.length ? h('div', { class: 'flash warn' }, `Event yang gagal dimuat: ${pub.errors.map((e) => `${e.id} (${e.message})`).join('; ')}.`) : null,
     h('div', { class: 'row', style: 'margin-bottom:16px' },
       h('a', { class: 'btn primary', href: '#/admin/new' }, 'Event baru'),
-      h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Impor file event (.json)'),
-      h('button', { class: 'btn', type: 'button', onclick: () => downloadIndex(pub) }, 'Unduh index.json'),
-      h('button', { class: 'btn', type: 'button', onclick: async () => { await loadPublished(true); rerender(); } }, 'Muat ulang data terbit'),
+      isServer ? null : [
+        h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, 'Impor file event (.json)'),
+        h('button', { class: 'btn', type: 'button', onclick: () => downloadIndex(pub) }, 'Unduh index.json'),
+      ],
+      h('button', { class: 'btn', type: 'button', onclick: async () => { await loadPublished(true); rerender(); } }, isServer ? 'Muat ulang' : 'Muat ulang data terbit'),
       fileInput),
-    publishGuide(null),
+    isServer ? null : publishGuide(null),
     evs.length ? evs.map((ev) => {
-      const ps = publishState(ev.id, pub);
+      const ps = isServer ? null : publishState(ev.id, pub);
       const s = summary(ev);
       const manual = closedManually(ev);
       return h('div', { class: 'card' },
         h('div', { class: 'row between' },
           h('h2', { style: 'margin:0' }, ev.name),
-          h('span', { class: 'row' }, stateChip(ev), manual ? h('span', { class: 'chip' }, 'Ditutup manual') : null, h('span', { class: `chip ${ps.cls}` }, ps.label))),
+          h('span', { class: 'row' }, stateChip(ev), manual ? h('span', { class: 'chip' }, 'Ditutup manual') : null, ps ? h('span', { class: `chip ${ps.cls}` }, ps.label) : null)),
         h('p', { class: 'muted small', style: 'margin:8px 0' }, `${periodText(ev)} · ${s.total} entri (${s.pending} menunggu, ${s.valid} valid, ${s.invalid} tidak valid)`),
         h('div', { class: 'row' },
           h('a', { class: 'btn sm primary', href: `#/admin/e/${ev.id}` }, 'Kelola & verifikasi'),
@@ -180,11 +223,14 @@ export async function renderDashboard({ rerender }) {
 function toggleClose(ev, pub, rerender) {
   const manual = closedManually(ev);
   if (!manual && !confirm(`Tutup event "${ev.name}"? Event hilang dari beranda dan tidak menerima entri baru.`)) return;
-  act(rerender, () => {
-    const next = mutate(ev.id, pub, (cur) => (manual ? reopenEvent(cur) : closeEvent(cur, getSession()?.u ?? 'admin')));
-    if (!manual) flash('ok', `Event "${ev.name}" ditutup. Terbitkan agar berlaku untuk publik.`);
+  act(rerender, async () => {
+    let next;
+    if (isServer) next = (await serverApi('POST', `admin/events/${ev.id}/${manual ? 'reopen' : 'close'}`, {})).event;
+    else next = mutate(ev.id, pub, (cur) => (manual ? reopenEvent(cur) : closeEvent(cur, currentSession()?.u ?? 'admin')));
+    const publish = isServer ? '' : ' Terbitkan agar berlaku untuk publik.';
+    if (!manual) flash('ok', `Event "${ev.name}" ditutup.${publish}`);
     else if (eventState(next, today()) === 'closed') flash('warn', `Event dibuka kembali, tetapi tanggal selesai (${dateID(next.end_date)}) sudah lewat sehingga tetap ditutup. Ubah tanggal lewat "Edit info".`);
-    else flash('ok', `Event "${ev.name}" dibuka kembali. Terbitkan agar berlaku untuk publik.`);
+    else flash('ok', `Event "${ev.name}" dibuka kembali.${publish}`);
   });
 }
 
@@ -214,16 +260,20 @@ export async function renderEventForm(id) {
       h('button', { class: 'btn primary', type: 'submit' }, 'Simpan'),
       h('a', { class: 'btn', href: editing ? `#/admin/e/${editing.id}` : '#/admin' }, 'Batal')));
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.hidden = true;
     try {
       const input = { name: name.value, description: desc.value, start_date: start.value, end_date: end.value };
-      const saved = editing
-        ? updateEventInfo(editing, input)
-        : newEvent(input, allIds(pub));
-      saveAdminEvent(saved);
-      flash('ok', editing ? 'Info event disimpan di browser ini. Terbitkan agar terlihat publik.' : 'Event dibuat di browser ini. Terbitkan agar terlihat publik.');
+      let saved;
+      if (isServer) {
+        saved = (await serverApi(editing ? 'PUT' : 'POST', editing ? `admin/events/${editing.id}` : 'admin/events', input)).event;
+        flash('ok', editing ? 'Info event disimpan.' : 'Event dibuat.');
+      } else {
+        saved = editing ? updateEventInfo(editing, input) : newEvent(input, allIds(pub));
+        saveAdminEvent(saved);
+        flash('ok', editing ? 'Info event disimpan di browser ini. Terbitkan agar terlihat publik.' : 'Event dibuat di browser ini. Terbitkan agar terlihat publik.');
+      }
       go(`#/admin/e/${saved.id}`);
     } catch (x) {
       if (!(x instanceof UserError)) throw x;
@@ -246,12 +296,12 @@ function select(id, label, value, options, onchange) {
 
 function entryRow(ev, e, dups, pub, rerender) {
   const note = h('input', { type: 'text', maxlength: '200', value: e.admin_note, placeholder: 'Catatan (tampil publik bila tidak valid)', 'aria-label': `Catatan untuk ${e.name}` });
-  const setTo = (status) => act(rerender, () => { mutate(ev.id, pub, (cur) => setStatus(cur, e.id, status, note.value)); });
+  const setTo = (status) => act(rerender, () => doSetStatus(ev, pub, e.id, status, note.value));
   const btn = (status, text, cls) => h('button', { class: `btn sm ${cls}`, type: 'button', onclick: () => setTo(status) }, text);
   return h('tr', null,
     h('td', { 'data-label': 'Nama' }, h('strong', null, e.name),
       dups.has(e.id) ? h('span', { class: 'chip warn', style: 'margin-left:6px' }, 'mungkin ganda') : null,
-      outsidePeriod(ev, e, tz) ? h('span', { class: 'chip warn', style: 'margin-left:6px' }, 'dikirim di luar periode') : null),
+      !isServer && outsidePeriod(ev, e, tz) ? h('span', { class: 'chip warn', style: 'margin-left:6px' }, 'dikirim di luar periode') : null),
     h('td', { class: 'num', 'data-label': 'Nominal' }, rupiah(e.amount)),
     h('td', { class: 'nowrap', 'data-label': 'Tgl transfer' }, dateID(e.transfer_date)),
     h('td', { class: 'nowrap', 'data-label': 'Diinput' }, dateTimeID(e.submitted_at, tz)),
@@ -263,7 +313,7 @@ function entryRow(ev, e, dups, pub, rerender) {
         btn('pending', 'Menunggu', ''),
         h('button', {
           class: 'btn sm danger', type: 'button', 'aria-label': `Hapus entri ${e.name}`,
-          onclick: () => { if (confirm(`Hapus entri ${e.name} (${rupiah(e.amount)})? Tindakan ini tidak bisa dibatalkan.`)) act(rerender, () => { mutate(ev.id, pub, (cur) => deleteEntry(cur, e.id)); }); },
+          onclick: () => { if (confirm(`Hapus entri ${e.name} (${rupiah(e.amount)})? Tindakan ini tidak bisa dibatalkan.`)) act(rerender, () => doDeleteEntry(ev, pub, e.id)); },
         }, 'Hapus')))));
 }
 
@@ -296,11 +346,8 @@ function manualPanel(ev, pub, rerender) {
     h('summary', null, 'Tambah entri manual (mis. dari mutasi rekening)'),
     h('div', { class: 'fields-2' }, field('Nama', name, null, 'm-name'), field('Nominal (Rp)', amount, null, 'm-amount')),
     field('Tanggal transfer', date, null, 'm-date'),
-    h('button', { class: 'btn', type: 'button', onclick: () => act(rerender, () => {
-      mutate(ev.id, pub, (cur) => {
-        const e = newEntry({ name: name.value, amount: amount.value, transfer_date: date.value }, today());
-        return { ...cur, entries: [...cur.entries, e] };
-      });
+    h('button', { class: 'btn', type: 'button', onclick: () => act(rerender, async () => {
+      await doAddEntry(ev, pub, { name: name.value, amount: amount.value, transfer_date: date.value });
       flash('ok', 'Entri ditambahkan.');
     }) }, 'Tambah'));
 }
@@ -309,7 +356,7 @@ export async function renderAdminEvent(id, { rerender }) {
   const pub = await loadPublished();
   const ev = working(id, pub);
   if (!ev) return notFound('Event tidak ditemukan.');
-  const ps = publishState(id, pub);
+  const ps = isServer ? null : publishState(id, pub);
   const manual = closedManually(ev);
   const s = summary(ev);
   const dups = duplicates(ev);
@@ -318,7 +365,7 @@ export async function renderAdminEvent(id, { rerender }) {
   list = sortEntries(list, view.sort, view.dir);
   const set = (k) => (v) => { view[k] = v; rerender(); };
 
-  const publishCard = h('div', { class: 'card' },
+  const publishCard = isServer ? null : h('div', { class: 'card' },
     h('div', { class: 'row between' }, h('h2', { style: 'margin:0' }, 'Penerbitan'), h('span', { class: `chip ${ps.cls}` }, ps.label)),
     h('p', { class: 'muted small', style: 'margin:8px 0' }, 'Publik hanya melihat file yang sudah di-commit ke repo. Perubahan Anda tersimpan di browser ini sampai diterbitkan.'),
     h('div', { class: 'row' },
@@ -345,7 +392,7 @@ export async function renderAdminEvent(id, { rerender }) {
       h('a', { class: 'btn sm', href: `#/e/${ev.id}` }, 'Lihat halaman publik')),
     publishCard,
     statsStrip(s),
-    importPanel(ev, pub, rerender),
+    isServer ? null : importPanel(ev, pub, rerender),
     manualPanel(ev, pub, rerender),
     h('div', { class: 'card' },
       h('div', { class: 'row', style: 'margin-bottom:12px' },
@@ -356,6 +403,6 @@ export async function renderAdminEvent(id, { rerender }) {
         ? h('div', { class: 'table-wrap' }, h('table', { class: 'stack' },
           h('thead', null, h('tr', null, ['Nama', 'Nominal', 'Tgl transfer', 'Diinput', 'Status', 'Verifikasi'].map((t) => h('th', { class: t === 'Nominal' ? 'num' : '' }, t)))),
           h('tbody', null, list.map((e) => entryRow(ev, e, dups, pub, rerender)))))
-        : h('div', { class: 'empty' }, ev.entries.length ? 'Tidak ada entri dengan filter ini.' : 'Belum ada entri. Impor kode kirim dari peserta atau tambah manual.')),
+        : h('div', { class: 'empty' }, ev.entries.length ? 'Tidak ada entri dengan filter ini.' : (isServer ? 'Belum ada entri. Entri yang dikirim peserta akan muncul di sini.' : 'Belum ada entri. Impor kode kirim dari peserta atau tambah manual.'))),
   ];
 }
