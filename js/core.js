@@ -279,9 +279,12 @@ export function submitBlockReason(ev, today) {
   }
 }
 
+/** Merapikan catatan admin (dipakai juga oleh mode Supabase). */
+export const cleanAdminNote = (note) => cleanText(note, LIMITS.adminNote, 'Catatan');
+
 export function setStatus(ev, entryId, status, note, now = new Date()) {
   if (!STATUSES.includes(status)) throw new UserError('Status tidak dikenal.');
-  const adminNote = cleanText(note, LIMITS.adminNote, 'Catatan');
+  const adminNote = cleanAdminNote(note);
   const out = structuredClone(ev);
   const e = out.entries.find((x) => x.id === entryId);
   if (!e) throw new UserError('Entri tidak ditemukan.');
@@ -319,12 +322,6 @@ export function duplicates(ev) {
   const out = new Set();
   for (const ids of groups.values()) if (ids.length > 1) ids.forEach((i) => out.add(i));
   return out;
-}
-
-/** true bila entri dikirim di luar rentang tanggal input event (zona waktu tz). */
-export function outsidePeriod(ev, entry, tz) {
-  const d = dateIn(tz, new Date(entry.submitted_at));
-  return d < ev.start_date || d > ev.end_date;
 }
 
 export function sortEntries(entries, by = 'transfer', dir = 'asc') {
@@ -395,87 +392,6 @@ export function serializeEvent(ev) {
   return JSON.stringify(normalizeEvent(ev), null, 2) + '\n';
 }
 
-export function parseEventJSON(text) {
-  let raw;
-  try { raw = JSON.parse(text); } catch { throw new UserError('File bukan JSON yang valid.'); }
-  return normalizeEvent(raw);
-}
-
-export function buildIndex(ids, now = new Date()) {
-  const list = [...new Set(ids)].filter(validId).sort();
-  return JSON.stringify({ updated_at: now.toISOString(), events: list }, null, 2) + '\n';
-}
-
-export function parseIndex(text) {
-  let raw;
-  try { raw = typeof text === 'string' ? JSON.parse(text) : text; } catch { throw new UserError('index.json bukan JSON yang valid.'); }
-  if (!raw || !Array.isArray(raw.events)) throw new UserError('index.json tidak valid.');
-  return [...new Set(raw.events.filter(validId))];
-}
-
-// ---------- kode kirim entri (peserta -> admin) ----------
-
-const CODE_PREFIX = 'TC1.';
-
-function b64urlEncode(str) {
-  const bytes = new TextEncoder().encode(str);
-  let bin = '';
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function b64urlDecode(s) {
-  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-}
-
-export function encodeEntryCode(eventId, entry) {
-  const payload = { e: eventId, i: entry.id, n: entry.name, a: entry.amount, d: entry.transfer_date, t: entry.submitted_at };
-  return CODE_PREFIX + b64urlEncode(JSON.stringify(payload));
-}
-
-/** Membaca satu kode kirim. Melempar UserError bila rusak/tidak valid. */
-export function decodeEntryCode(code) {
-  const c = String(code ?? '').trim();
-  if (!c.startsWith(CODE_PREFIX) || c.length > LIMITS.code) throw new UserError('Kode kirim tidak valid.');
-  let p;
-  try { p = JSON.parse(b64urlDecode(c.slice(CODE_PREFIX.length))); } catch { throw new UserError('Kode kirim rusak.'); }
-  if (!p || typeof p !== 'object' || !validId(p.e) || !validEntryId(p.i)) throw new UserError('Kode kirim tidak valid.');
-  if (!isIso(p.t)) throw new UserError('Kode kirim tidak valid.');
-  const v = validateEntryInput({ name: p.n, amount: String(p.a), transfer_date: p.d });
-  return {
-    eventId: p.e,
-    entry: { id: p.i, ...v, submitted_at: new Date(p.t).toISOString(), status: STATUS.PENDING, admin_note: '', verified_at: null },
-  };
-}
-
-/** Mengambil semua kode TC1.… dari teks bebas (mis. tempelan dari WhatsApp). */
-export function extractCodes(text) {
-  return String(text ?? '').match(/TC1\.[A-Za-z0-9_-]+/g) ?? [];
-}
-
-/**
- * Menggabungkan kode-kode ke sebuah event. Entri dengan id yang sudah ada dilewati.
- * Kode untuk event lain dihitung "salah event".
- */
-export function importCodes(ev, text) {
-  const out = structuredClone(ev);
-  const have = new Set(out.entries.map((e) => e.id));
-  const res = { event: out, added: 0, duplicate: 0, wrongEvent: 0, invalid: 0, full: 0 };
-  for (const code of extractCodes(text)) {
-    let d;
-    try { d = decodeEntryCode(code); } catch { res.invalid++; continue; }
-    if (d.eventId !== ev.id) { res.wrongEvent++; continue; }
-    if (have.has(d.entry.id)) { res.duplicate++; continue; }
-    if (out.entries.length >= LIMITS.entries) { res.full++; continue; }
-    out.entries.push(d.entry);
-    have.add(d.entry.id);
-    res.added++;
-  }
-  return res;
-}
-
 // ---------- CSV ----------
 
 function csvCell(v, isText) {
@@ -498,27 +414,44 @@ export function toCSV(ev, tz) {
   return '﻿' + rows.map((r) => r.join(',')).join('\r\n') + '\r\n';
 }
 
-// ---------- login admin (gerbang UI) ----------
+// ---------- konfigurasi Supabase ----------
 
-export async function sha256Hex(text) {
-  const buf = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+function b64urlDecode(s) {
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
-/** Perbandingan string tanpa early-exit. */
-export function safeEqual(a, b) {
-  const x = String(a), y = String(b);
-  let diff = x.length ^ y.length;
-  const n = Math.max(x.length, y.length);
-  for (let i = 0; i < n; i++) diff |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
-  return diff === 0;
-}
 
-export function configProblem(cfg) {
-  const a = cfg?.admin ?? {};
-  if (!a.username || !/^[a-f0-9]{64}$/.test(a.password_sha256 ?? '')) {
-    return 'Login admin belum diatur. Isi admin.username dan admin.password_sha256 di config.js (lihat README). Bila sudah diisi dan di-push, tunggu ±1–2 menit lalu muat ulang paksa halaman (Cmd/Ctrl+Shift+R).';
+/** true bila kunci terlihat seperti kunci rahasia/service_role (TIDAK boleh ada di config.js yang publik). */
+export function isSecretSupabaseKey(key) {
+  const k = String(key ?? '').trim();
+  if (k.startsWith('sb_secret_')) return true;
+  const parts = k.split('.');
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(b64urlDecode(parts[1]));
+      return payload?.role === 'service_role';
+    } catch { /* bukan JWT */ }
   }
+  return false;
+}
+
+/** Pesan masalah pada config.supabase (atau '' bila layak dipakai). */
+export function supabaseProblem(cfg) {
+  const s = cfg?.supabase;
+  const hint = 'Isi supabase.url dan supabase.anon_key di config.js (lihat SUPABASE.md).';
+  if (!s || typeof s !== 'object') return `Konfigurasi Supabase belum diisi. ${hint}`;
+  const rawUrl = String(s.url ?? '').trim();
+  const key = String(s.anon_key ?? '').trim();
+  if (rawUrl === '' || /project-ref|ganti/i.test(rawUrl)) return `supabase.url belum diisi. ${hint}`;
+  let u;
+  try { u = new URL(rawUrl); } catch { return `supabase.url tidak valid (contoh: https://abcdefgh.supabase.co). ${hint}`; }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if (!(u.protocol === 'https:' || (u.protocol === 'http:' && local))) return 'supabase.url harus diawali https:// (http:// hanya untuk localhost).';
+  if (u.pathname.replace(/\/+$/, '') !== '' || u.search || u.hash) return 'supabase.url hanya berisi alamat dasar proyek, tanpa path (contoh: https://abcdefgh.supabase.co).';
+  if (key === '' || /ganti|isi-dengan/i.test(key) || key.length < 20) return `supabase.anon_key belum diisi. ${hint}`;
+  if (isSecretSupabaseKey(key)) return 'JANGAN memakai kunci rahasia (service_role / secret) di config.js — file itu publik. Pakai kunci "anon" atau "publishable".';
   try { new Intl.DateTimeFormat('en-US', { timeZone: cfg.timezone }); } catch { return `Zona waktu "${cfg.timezone}" tidak dikenal.`; }
   return '';
 }

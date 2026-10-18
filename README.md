@@ -1,21 +1,37 @@
 # Transfer Checklist (JavaScript)
 
 Web sederhana untuk mencatat transfer dana per periode (event) dan memverifikasinya terhadap mutasi rekening.
-**Tanpa database, tanpa dependensi npm, tanpa build.** Satu kode, dua cara menjalankan:
+**Tanpa dependensi npm, tanpa build.** Frontend berupa file statis (cocok untuk GitHub Pages) dengan dua pilihan backend:
 
-| | **Mode Node.js** (disarankan) | **Mode GitHub Pages** (statis) |
+| | **Supabase** (bawaan, disarankan) | **Node.js** (alternatif) |
 |---|---|---|
-| Menjalankan | `npm start` di komputer/server Anda | push ke GitHub, aktifkan Pages |
-| Peserta input | langsung, entri langsung tercatat | lewat *kode kirim* yang diteruskan ke admin |
-| Penyimpanan | file JSON di server (`data/events/<id>.json`) | file JSON di repo (diterbitkan admin lewat `git push`) |
-| Periode & tutup event | **ditegakkan server** | hanya di sisi browser |
-| Login admin | sesi di server (cookie HttpOnly) | gerbang tampilan di browser |
+| Menjalankan | frontend di GitHub Pages + database **Supabase (PostgreSQL)** | `npm start` di komputer/server Anda |
+| Peserta input | langsung, entri langsung tercatat | langsung, entri langsung tercatat |
+| Penyimpanan | tabel Postgres di Supabase | file JSON di server |
+| Periode & tutup event | **ditegakkan database** | **ditegakkan server** |
+| Login admin | **username + password di tabel `admins`** (hash bcrypt, token sesi, pembatas percobaan) | username/password di `config.json` server (cookie HttpOnly) |
+| Panduan | **[SUPABASE.md](SUPABASE.md)** | bagian "Mode Node.js" di bawah |
 
-Butuh **Node.js 20 atau lebih baru** untuk mode Node.js (`node --version`).
+Backend dipilih lewat `mode` di `config.js`: `'supabase'` (bawaan bila `mode` tidak diisi) atau `'server'` (dibuat otomatis oleh server Node.js).
+**Login lewat `config.js` (hash password di file publik) sudah dihapus**; tidak ada lagi password atau hash admin di `config.js`.
+
+Butuh **Node.js 20 atau lebih baru** hanya untuk mode Node.js dan untuk menjalankan tes (`node --version`).
 
 ---
 
-## Mode Node.js
+## Mode Supabase (GitHub Pages + database PostgreSQL)
+
+Frontend tetap statis, sedangkan data disimpan di Postgres milik Anda di Supabase. Peserta mengirim entri langsung ke database; admin login dengan username dan password dari tabel `admins` dan semua perubahan langsung tersimpan.
+
+Ringkasan: (1) buat proyek Supabase, (2) jalankan `supabase/schema.sql` di SQL Editor, (3) buat pengguna admin dan daftarkan di tabel `admins`, (4) isi `supabase.url` + `supabase.anon_key` di `config.js`, (5) push. **Langkah lengkapnya ada di [SUPABASE.md](SUPABASE.md).**
+
+Keamanan ada di database, bukan di JavaScript: pengunjung tidak punya akses langsung ke tabel, hanya ke dua fungsi (`get_published`, `submit_entry`); hanya admin yang boleh membaca/mengubah tabel (Row Level Security). Kunci `anon`/`publishable` di `config.js` memang publik, tetapi **kunci `service_role`/`secret` tidak boleh pernah ditaruh di sana** (aplikasi menolaknya).
+
+Deploy ke GitHub Pages: **Settings → Pages → Deploy from a branch**, branch `master`, folder `/ (root)`. Tidak perlu GitHub Actions. Uji lokal: `npm run serve` lalu buka `http://localhost:8080`.
+
+---
+
+## Mode Node.js (alternatif tanpa Supabase)
 
 ### Mulai dalam 3 langkah
 
@@ -25,7 +41,7 @@ npm start        # menjalankan server
 # buka http://localhost:8080  ·  admin: http://localhost:8080/#/admin
 ```
 
-Tidak ada `npm install`: tidak ada dependensi. Untuk pengembangan (restart otomatis): `npm run dev`.
+Mode ini menyajikan frontend yang sama dan menyimpan data di file JSON server (`<data_dir>/events/<id>.json`). Tidak ada `npm install`: tidak ada dependensi. Untuk pengembangan (restart otomatis): `npm run dev`.
 
 ### Alur pemakaian
 
@@ -47,7 +63,7 @@ Catatan admin hanya ditampilkan ke publik untuk entri **Tidak valid**; untuk sta
 | `base_url` | _(kosong)_ | URL publik. Bila diawali `https://`, cookie diberi flag `Secure` dan HSTS aktif. |
 | `data_dir` | `./data` | Lokasi data (relatif terhadap folder `config.json`). Berkas event ada di `<data_dir>/events/`. |
 | `timezone` | `Asia/Jakarta` | Zona waktu untuk batas hari periode input. |
-| `admin.username` / `admin.password` | – | Wajib. Kredensial statis admin (hanya ada di server). |
+| `admin.username` / `admin.password` | – | Wajib. Kredensial admin (hanya ada di server, bukan di config.js). |
 | `session_secret` | – | Wajib, ≥ 32 karakter acak. Menandatangani cookie sesi. Ganti = semua admin keluar. |
 | `session_ttl_hours` | `12` | Masa berlaku sesi admin. |
 | `trust_proxy` | `false` | Isi `true` **hanya** bila di belakang reverse proxy/tunnel, agar IP klien (untuk rate limit) dibaca dari `CF-Connecting-IP` / `X-Forwarded-For`. |
@@ -117,69 +133,31 @@ Semua permintaan non-GET wajib `Content-Type: application/json` dan header `X-TC
 ### Tes
 
 ```bash
-npm test     # 45 tes (logika, konfigurasi, dan server HTTP lengkap), tanpa dependensi
+npm test     # logika, konfigurasi, klien Supabase, dan server HTTP lengkap; tanpa dependensi
 ```
-
----
-
-## Mode GitHub Pages (statis)
-
-Untuk hosting gratis tanpa server. GitHub Pages hanya menyajikan file statis sehingga **tidak ada tempat bersama untuk menyimpan data yang dikirim banyak orang**. Alurnya:
-
-1. **Data terbit** = `data/index.json` + `data/events/<id>.json` di repo. Halaman publik membacanya.
-2. **Peserta** mengisi form; entri disimpan di perangkatnya dan menghasilkan **kode kirim** (`TC1.…`) untuk diteruskan ke admin (tombol WhatsApp atau salin).
-3. **Admin** login, menempelkan kode-kode itu di halaman event (**Impor kode kirim**), memverifikasi, lalu **menerbitkan**: unduh `<id>.json` dan `index.json`, simpan ke folder `data/`, `git commit` dan `git push`.
-
-Data kerja admin tinggal di browser admin sampai diterbitkan; pakai satu browser yang sama.
-
-### Deploy
-
-1. Push proyek ini ke repo GitHub.
-2. **Settings → Pages → Build and deployment → Source: _Deploy from a branch_**, Branch `master`, folder `/ (root)`, **Save**.
-3. Buka `https://<user>.github.io/<repo>/`. Tidak perlu GitHub Actions.
-
-Di mode ini, **`config.js` bersifat publik**. Login admin memakai hash SHA-256 password di `config.js`:
-
-```bash
-printf '%s' 'password-anda' | shasum -a 256
-```
-
-Salin hasilnya ke `admin.password_sha256` (selama masih berisi nilai contoh, login menolak). Setelah `git push`, tunggu ±1–2 menit sampai Pages selesai deploy; bila halaman login masih menampilkan "belum diatur", muat ulang paksa (Cmd/Ctrl+Shift+R) atau buka jendela privat. Opsi lain di `config.js`: `timezone`, `session_hours`, `admin_whatsapp` (mis. `6281234567890`), `repo_url`. Buka `…/#/admin`.
-
-> `config.json` (mode Node.js) tidak ikut terbit karena ada di `.gitignore`, dan server tidak pernah menyajikannya.
-
-### Batasan mode statis
-
-- Login admin hanyalah gerbang tampilan; yang melindungi data adalah akses `git push` ke repo (aktifkan 2FA GitHub).
-- Periode input tidak bisa dipaksakan di server; entri yang dikirim di luar periode diberi label *"dikirim di luar periode"* untuk dinilai admin. Waktu input berasal dari jam perangkat peserta.
-- Entri baru baru tampil publik setelah admin mengimpor dan menerbitkan. CDN GitHub Pages bisa tertinggal beberapa menit.
-- Repo publik berarti `data/` (nama dan nominal) dapat dibaca siapa saja.
-
-File contoh untuk dicoba ada di `examples/arisan-contoh.json` (dashboard → **Impor file event**). Untuk uji lokal mode ini tanpa Node: `python3 -m http.server 8080`.
 
 ---
 
 ## Struktur
 
 ```
-server.js              titik masuk server Node.js (--init membuat config.json)
-server/config.js       muat & validasi config.json + env
-server/store.js        penyimpanan JSON atomik dengan kunci per event
-server/auth.js         sesi HMAC, perbandingan waktu-konstan, rate limiter
-server/app.js          handler HTTP: file statis + API JSON
 index.html             halaman tunggal (router berbasis #/…)
-config.js              pengaturan mode statis (publik); server membuat versinya sendiri
+config.js              pengaturan publik: mode, supabase.url, supabase.anon_key, timezone, session_hours
 css/style.css
-js/core.js             logika murni: periode, validasi, kode kirim, CSV (dipakai browser DAN server)
-js/app.js              router            js/mode.js, session.js, api.js   mode server/statis
+js/core.js             logika murni: periode, validasi, CSV, cek config (dipakai browser DAN server)
+js/app.js              router
+js/mode.js             pemilih backend (supabase/server) + pemanggil API
+js/supabase.js         klien Supabase tanpa dependensi (REST /rpc), jalur API sama dengan server
+js/session.js, api.js, storage.js, settings.js, ui.js, dom.js, datepicker.js
 js/views-public.js     beranda + halaman event
 js/views-admin.js      login, dashboard, form event, verifikasi
-data/                  data event (mode Node.js menulis di sini; mode statis membaca dari sini)
-examples/              contoh file event
-test/                  core, config, dan server (node --test)
+supabase/schema.sql    skema Postgres + fungsi (jalankan di SQL Editor Supabase)
+SUPABASE.md            panduan setup Supabase
+server.js, server/     server Node.js opsional (config.json, penyimpanan JSON, sesi, API)
+test/                  core, config, server, dan klien Supabase (node --test)
 ```
 
-## Format file event
+## Format file event (mode Node.js)
 
 ```json
 {
@@ -198,4 +176,4 @@ test/                  core, config, dan server (node --test)
 }
 ```
 
-`status`: `pending` | `valid` | `invalid`. Format ini sama untuk kedua mode, jadi data dari server bisa langsung diterbitkan ke GitHub Pages dan sebaliknya.
+`status`: `pending` | `valid` | `invalid`. Di mode Supabase bentuk yang sama disimpan sebagai baris tabel `events` dan `entries`.

@@ -1,88 +1,42 @@
-// Penyimpanan di browser (localStorage), tahan error: bila diblokir (mode privat, dsb.) jatuh ke memori.
-import { normalizeEvent, UserError } from './core.js';
-
+// Penyimpanan sesi admin Supabase di browser (localStorage), tahan error:
+// bila diblokir (mode privat, dsb.) jatuh ke memori selama halaman terbuka.
 const mem = new Map();
-let persistent = true;
 
-function read(store, key, fallback) {
+function safe() {
+  try { return window.localStorage; } catch { return null; }
+}
+
+function read(key, fallback) {
+  const store = safe();
+  if (!store) return mem.has(key) ? mem.get(key) : fallback;
   try {
     const raw = store.getItem(key);
-    return raw === null ? fallback : JSON.parse(raw);
+    return raw === null ? (mem.has(key) ? mem.get(key) : fallback) : JSON.parse(raw);
   } catch {
     return mem.has(key) ? mem.get(key) : fallback;
   }
 }
 
-function write(store, key, value) {
+function write(key, value) {
   try {
-    store.setItem(key, JSON.stringify(value));
+    safe().setItem(key, JSON.stringify(value));
     mem.delete(key);
   } catch {
-    persistent = false;
     mem.set(key, value);
   }
 }
 
-function safe(getStore) {
-  try { return getStore(); } catch { return { getItem: () => null, setItem: () => { throw new Error('blocked'); } }; }
-}
+// ----- sesi admin Supabase (token sesi dari admin_login) -----
+// Disimpan di localStorage dan dibatasi umur lokal "until" (config.session_hours, maksimal umur sesi di server).
 
-const local = () => safe(() => window.localStorage);
-const session = () => safe(() => window.sessionStorage);
-
-export const isPersistent = () => persistent;
-
-// ----- salinan kerja admin: { [eventId]: event } -----
-
-export function adminEvents() {
-  const raw = read(local(), 'tc.admin.events', {});
-  const out = new Map();
-  if (raw && typeof raw === 'object') {
-    for (const v of Object.values(raw)) {
-      try { const ev = normalizeEvent(v); out.set(ev.id, ev); } catch (e) { if (!(e instanceof UserError)) throw e; }
-    }
-  }
-  return out;
-}
-
-export function saveAdminEvent(ev) {
-  const raw = read(local(), 'tc.admin.events', {});
-  raw[ev.id] = normalizeEvent(ev);
-  write(local(), 'tc.admin.events', raw);
-}
-
-export function removeAdminEvent(id) {
-  const raw = read(local(), 'tc.admin.events', {});
-  delete raw[id];
-  write(local(), 'tc.admin.events', raw);
-}
-
-// ----- entri milik peserta di perangkat ini -----
-
-export function myEntries() {
-  const raw = read(local(), 'tc.mine', []);
-  return Array.isArray(raw) ? raw.filter((x) => x && typeof x.code === 'string' && typeof x.eventId === 'string') : [];
-}
-
-export function addMyEntry(item) {
-  write(local(), 'tc.mine', [...myEntries(), item]);
-}
-
-export function removeMyEntry(entryId) {
-  write(local(), 'tc.mine', myEntries().filter((x) => x.id !== entryId));
-}
-
-// ----- sesi admin & pembatasan percobaan login -----
-
-export function getSession() {
-  const s = read(session(), 'tc.session', null);
-  if (!s || typeof s.u !== 'string' || typeof s.exp !== 'number' || s.exp < Date.now()) return null;
+export function getSbSession() {
+  const s = read('tc.sb', null);
+  if (!s || typeof s.token !== 'string' || typeof s.username !== 'string') return null;
+  if (typeof s.until === 'number' && s.until < Date.now()) { clearSbSession(); return null; }
   return s;
 }
-export const setSession = (s) => write(session(), 'tc.session', s);
-export function clearSession() {
-  try { session().removeItem('tc.session'); } catch { /* abaikan */ }
+export const setSbSession = (s) => write('tc.sb', s);
+export function clearSbSession() {
+  mem.delete('tc.sb');
+  try { safe()?.removeItem('tc.sb'); } catch { /* abaikan */ }
 }
-
-export const getLock = () => read(local(), 'tc.lock', { fails: 0, until: 0 });
-export const setLock = (l) => write(local(), 'tc.lock', l);

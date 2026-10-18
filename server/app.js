@@ -1,4 +1,4 @@
-// Handler HTTP: file statis (frontend yang sama dengan GitHub Pages) + API JSON.
+// Handler HTTP: file statis (frontend yang sama dengan mode Supabase) + API JSON.
 // Semua aturan bisnis memakai js/core.js, sama persis dengan yang dipakai browser.
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';

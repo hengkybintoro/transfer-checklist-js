@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { buildConfig } from '../server/config.js';
 import { Store } from '../server/store.js';
 import { createApp } from '../server/app.js';
-import { parseEventJSON, parseIndex } from '../js/core.js';
+import { normalizeEvent } from '../js/core.js';
+
+const parseEventJSON = (text) => normalizeEvent(JSON.parse(text));
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PW = 'rahasia-123';
@@ -290,7 +292,7 @@ test('admin: buat, ubah, tambah entri manual, validasi', async (t) => {
   assert.equal(man.json.event.entries[0].name, 'Manual');
 });
 
-test('data tersimpan sebagai file JSON valid + index + cadangan', async (t) => {
+test('data tersimpan sebagai file JSON valid + cadangan', async (t) => {
   const { s, cookie, ev } = await withEvent(t);
   await s.call('POST', `/api/events/${ev.id}/entries`, ENTRY);
   await s.call('POST', `/api/admin/events/${ev.id}/close`, undefined, { cookie });
@@ -298,7 +300,6 @@ test('data tersimpan sebagai file JSON valid + index + cadangan', async (t) => {
   const saved = parseEventJSON(await readFile(file, 'utf8'));
   assert.equal(saved.entries.length, 1);
   assert.ok(saved.closed_at);
-  assert.deepEqual(parseIndex(await readFile(path.join(s.dir, 'index.json'), 'utf8')), [ev.id]);
   const files = await readdir(path.join(s.dir, 'events'));
   assert.ok(files.includes(`${ev.id}.json.bak`), 'ada cadangan');
   assert.ok(!files.some((f) => f.endsWith('.tmp')), 'tidak ada sisa .tmp');

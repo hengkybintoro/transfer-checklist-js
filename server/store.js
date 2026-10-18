@@ -1,8 +1,8 @@
 // Penyimpanan file JSON: satu file per event di <data_dir>/events/<id>.json.
 // Penulisan atomik (tulis .tmp -> fsync -> rename) dan cadangan .bak; kunci per event agar tidak saling timpa.
-import { mkdir, readdir, readFile, writeFile, rename, copyFile, open, unlink } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, copyFile, open, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { normalizeEvent, serializeEvent, newEvent, validId, buildIndex, UserError } from '../js/core.js';
+import { normalizeEvent, serializeEvent, newEvent, validId, UserError } from '../js/core.js';
 
 export class NotFoundError extends UserError {}
 
@@ -91,17 +91,7 @@ export class Store {
       const ids = await this.ids();
       const ev = newEvent(input, ids, now);
       await this.write(ev);
-      await this.writeIndex();
       return ev;
     });
-  }
-
-  /** Menjaga data/index.json tetap sinkron agar folder data bisa dipakai juga oleh mode GitHub Pages. */
-  async writeIndex() {
-    const text = buildIndex(await this.ids());
-    const target = path.join(this.dir, 'index.json');
-    const tmp = `${target}.${process.pid}.tmp`;
-    await writeFile(tmp, text, { mode: 0o644 });
-    await rename(tmp, target);
   }
 }

@@ -1,9 +1,9 @@
 {
   "name": "transfer-checklist-js",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Transfer Checklist: jalan di Node.js (server + JSON) atau statis di GitHub Pages",
+  "description": "Transfer Checklist: frontend statis + Supabase (Postgres) atau server Node.js (JSON)",
   "scripts": {
     "init": "node server.js --init",
     "start": "node server.js",

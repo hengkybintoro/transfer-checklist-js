@@ -124,15 +124,16 @@ test('setStatus tidak mengubah objek asal', () => {
   assert.equal(JSON.stringify(ev), before);
 });
 
-test('duplicates & outsidePeriod', () => {
-  const ev = mk({ entries: [entry({ name: 'Budi' }), entry({ name: 'budi' }), entry({ name: 'Ani' })] });
-  const d = c.duplicates(ev);
-  assert.equal(d.size, 2);
-  assert.ok(!d.has(ev.entries[2].id));
-  const inside = entry();
-  assert.ok(!c.outsidePeriod(mk(), inside, TZ));
-  const late = { ...inside, submitted_at: '2026-11-01T00:00:00.000Z' };
-  assert.ok(c.outsidePeriod(mk(), late, TZ));
+test('duplicates: nama+nominal+tanggal transfer sama', () => {
+  const a = entry(); const b = entry({ name: 'budi' }); const x = entry({ amount: '200000' });
+  const ev = mk({ entries: [a, { ...b, id: 'b'.repeat(16) }, { ...x, id: 'c'.repeat(16) }] });
+  assert.deepEqual([...c.duplicates(ev)].sort(), [a.id, 'b'.repeat(16)].sort());
+});
+
+test('login lama berbasis config.js (hash SHA-256) sudah dihapus dari kode inti', () => {
+  for (const name of ['sha256Hex', 'safeEqual', 'configProblem', 'encodeEntryCode', 'importCodes', 'buildIndex', 'parseIndex']) {
+    assert.equal(c[name], undefined, `${name} seharusnya sudah tidak ada`);
+  }
 });
 
 test('sortEntries', () => {
@@ -140,45 +141,6 @@ test('sortEntries', () => {
   const b = { ...entry({ name: 'a', amount: '9000' }), id: 'b'.repeat(16) };
   assert.deepEqual(c.sortEntries([a, b], 'name').map((e) => e.name), ['a', 'b']);
   assert.deepEqual(c.sortEntries([a, b], 'amount', 'desc').map((e) => e.amount), [9000, 5000]);
-});
-
-test('kode kirim: bolak-balik, termasuk karakter Unicode', () => {
-  const e = entry({ name: 'Siti Nurhaliza 🌸' });
-  const code = c.encodeEntryCode('arisan', e);
-  assert.match(code, /^TC1\.[A-Za-z0-9_-]+$/);
-  const d = c.decodeEntryCode(code);
-  assert.equal(d.eventId, 'arisan');
-  assert.equal(d.entry.id, e.id);
-  assert.equal(d.entry.name, 'Siti Nurhaliza 🌸');
-  assert.equal(d.entry.amount, 100000);
-  assert.equal(d.entry.status, 'pending');
-});
-
-test('kode kirim: ditolak bila rusak / berbahaya', () => {
-  const forge = (obj) => 'TC1.' + Buffer.from(JSON.stringify(obj)).toString('base64url');
-  const good = { e: 'arisan', i: 'a'.repeat(16), n: 'Budi', a: 1000, d: '2026-10-11', t: '2026-10-12T00:00:00.000Z' };
-  assert.ok(c.decodeEntryCode(forge(good)));
-  for (const bad of [
-    'abc', 'TC1.', 'TC1.@@@', forge({ ...good, e: '../x' }), forge({ ...good, i: 'zz' }), forge({ ...good, a: -1 }),
-    forge({ ...good, a: 1.5 }), forge({ ...good, a: '1e3' }), forge({ ...good, n: '' }), forge({ ...good, d: '2026-02-30' }),
-    forge({ ...good, t: 'bukan-tanggal' }), 'TC1.' + 'A'.repeat(c.LIMITS.code),
-  ]) {
-    assert.throws(() => c.decodeEntryCode(bad), c.UserError, bad.slice(0, 30));
-  }
-});
-
-test('importCodes: tambah, duplikat, salah event, rusak', () => {
-  const ev = mk();
-  const e1 = entry({ name: 'A' });
-  const e2 = entry({ name: 'B' });
-  const text = `Halo admin, ini kode saya:\n${c.encodeEntryCode('arisan', e1)}\n\nlagi: ${c.encodeEntryCode('arisan', e2)} ${c.encodeEntryCode('lain', e1)} TC1.@@ ${c.encodeEntryCode('arisan', e1)}`;
-  const r = c.importCodes(ev, text);
-  assert.deepEqual([r.added, r.duplicate, r.wrongEvent, r.invalid], [2, 1, 1, 0].map((v, i) => (i === 3 ? 0 : v)));
-  assert.equal(r.event.entries.length, 2);
-  assert.equal(ev.entries.length, 0);
-  const again = c.importCodes(r.event, text);
-  assert.equal(again.added, 0);
-  assert.equal(again.duplicate, 3);
 });
 
 test('toCSV: kutip & anti formula injection', () => {
@@ -193,10 +155,10 @@ test('toCSV: kutip & anti formula injection', () => {
 test('normalizeEvent: bulat-balik stabil & menolak data rusak', () => {
   const ev = mk({ entries: [entry()] });
   const text = c.serializeEvent(ev);
-  const back = c.parseEventJSON(text);
+  const back = c.normalizeEvent(JSON.parse(text));
   assert.equal(c.serializeEvent(back), text);
-  assert.throws(() => c.parseEventJSON('{'), c.UserError);
-  assert.throws(() => c.parseEventJSON('[]'), c.UserError);
+  assert.throws(() => c.normalizeEvent([]), c.UserError);
+  assert.throws(() => c.normalizeEvent(null), c.UserError);
   assert.throws(() => c.normalizeEvent({ ...ev, id: '../etc' }), c.UserError);
   assert.throws(() => c.normalizeEvent({ ...ev, entries: 'x' }), c.UserError);
   const dup = { ...ev, entries: [ev.entries[0], ev.entries[0]] };
@@ -207,43 +169,11 @@ test('normalizeEvent: bulat-balik stabil & menolak data rusak', () => {
   assert.ok(!('evil' in extra));
 });
 
-test('index.json', () => {
-  const text = c.buildIndex(['b', 'a', 'a', '../x']);
-  assert.deepEqual(c.parseIndex(text), ['a', 'b']);
-  assert.deepEqual(c.parseIndex('{"events":["a","../x",1]}'), ['a']);
-  assert.throws(() => c.parseIndex('{}'), c.UserError);
-});
-
 test('format tampilan', () => {
   assert.equal(c.rupiah(1500000), 'Rp 1.500.000');
   assert.equal(c.rupiah(0), 'Rp 0');
   assert.equal(c.dateID('2026-10-05'), '5 Okt 2026');
   assert.equal(c.dateTimeID('2026-10-12T03:05:00Z', TZ), '12 Okt 2026 10:05');
-});
-
-test('sha256Hex & safeEqual & configProblem', async () => {
-  assert.equal(await c.sha256Hex('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
-  assert.ok(c.safeEqual('abc', 'abc'));
-  assert.ok(!c.safeEqual('abc', 'abd'));
-  assert.ok(!c.safeEqual('abc', 'abcd'));
-  assert.match(c.configProblem({ admin: { username: 'a', password_sha256: 'x' }, timezone: TZ }), /belum diatur/);
-  const h = 'a'.repeat(64);
-  assert.equal(c.configProblem({ admin: { username: 'a', password_sha256: h }, timezone: TZ }), '');
-  assert.match(c.configProblem({ admin: { username: 'a', password_sha256: h }, timezone: 'Mars/Olimpus' }), /Zona waktu/);
-});
-
-test('contoh event di examples/ valid dan stabil', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const text = await readFile(new URL('../examples/arisan-contoh.json', import.meta.url), 'utf8');
-  const ev = c.parseEventJSON(text);
-  assert.equal(c.serializeEvent(ev), text);
-  assert.equal(c.summary(ev).total, 3);
-});
-
-test('data/index.json bawaan valid', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const text = await readFile(new URL('../data/index.json', import.meta.url), 'utf8');
-  assert.deepEqual(c.parseIndex(text), []);
 });
 
 test('kalender: addDays & addMonths', () => {

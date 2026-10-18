@@ -1,27 +1,23 @@
-// Bagian tampilan bersama: konfigurasi, layout, flash, chip, dan cache data terbit.
+// Bagian tampilan bersama: konfigurasi, layout, flash, chip, dan pemuatan data event.
 import config from './settings.js';
 import { todayIn, eventState, STATE_LABEL, statusLabel, rupiah, dateID } from './core.js';
 import { fetchPublished } from './api.js';
 import { h } from './dom.js';
-import { isServer } from './mode.js';
 import { currentSession, logout } from './session.js';
 
 export { config };
 export const tz = config.timezone || 'Asia/Jakarta';
 export const appName = config.app_name || 'Transfer Checklist';
 
-// Mode server memakai tanggal server (bukan jam perangkat) untuk menentukan periode.
+// Tanggal server/database (bukan jam perangkat) dipakai untuk menentukan periode.
 let serverToday = null;
 export const today = () => serverToday ?? todayIn(tz);
 
-// ----- data event: mode statis di-cache selama sesi halaman; mode server selalu diambil ulang -----
-let pubCache = null;
-export async function loadPublished(force = false) {
-  if (!pubCache || force || isServer) {
-    pubCache = await fetchPublished();
-    if (pubCache.today) serverToday = pubCache.today;
-  }
-  return pubCache;
+// ----- data event: selalu diambil ulang dari backend (tanggal "hari ini" mengikuti server/database) -----
+export async function loadPublished() {
+  const pub = await fetchPublished();
+  if (pub.today) serverToday = pub.today;
+  return pub;
 }
 
 // ----- pesan sekali tampil -----

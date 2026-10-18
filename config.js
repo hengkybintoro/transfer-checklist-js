@@ -1,25 +1,25 @@
-// Konfigurasi aplikasi. File ini PUBLIK (ikut terbit di GitHub Pages), jadi jangan taruh rahasia di sini.
-// Lihat README bagian "Login admin" untuk cara membuat password_sha256.
+// Contoh config.js untuk MODE SUPABASE. Salin isinya ke config.js (timpa), lalu ganti dua nilai bertanda GANTI.
+// File ini PUBLIK (ikut terbit di GitHub Pages). Isi hanya kunci "publishable"/"anon" — JANGAN PERNAH kunci
+// "secret"/"service_role". Keamanan data dijaga oleh Row Level Security di database (supabase/schema.sql).
+// Panduan lengkap: SUPABASE.md
 export default {
   app_name: 'Transfer Checklist',
 
-  // Zona waktu untuk menentukan "hari ini" saat mengecek periode input.
-  timezone: 'Asia/Jakarta',
+  mode: 'supabase',
 
-  admin: {
-    username: 'irene',
-    // SHA-256 dari password admin (64 karakter hex). Buat dengan:
-    //   printf '%s' 'password-anda' | shasum -a 256
-    // Nilai di bawah hanya contoh dan MENOLAK login sampai Anda menggantinya.
-    password_sha256: 'b6596e8c458b71dcb89236a9762dcde8a1ea99992cec62a12bd627d34d7d9e30',
+  supabase: {
+    // GANTI: Project URL, contoh https://abcdefghijklmnop.supabase.co (tanpa garis miring/path di belakangnya)
+    url: 'https://guyqnipugalqjyroeovj.supabase.co',
+    // GANTI: kunci publishable (diawali sb_publishable_) atau kunci anon lama (diawali eyJ...)
+    anon_key: 'sb_publishable_qzxcMBtx8IUE5l-H7dnpqw_CQGaORPt',
   },
 
-  // Masa berlaku sesi admin di browser (jam).
-  session_hours: 12,
+  // Zona waktu untuk tampilan jam/tanggal. Harus sama dengan app_timezone() di supabase/schema.sql
+  // (bawaan keduanya Asia/Jakarta; periode input ditentukan oleh database memakai zona waktu di schema.sql).
+  timezone: 'Asia/Jakarta',
 
-  // Opsional: nomor WhatsApp admin (format internasional tanpa +, mis. '6281234567890').
-  // Bila diisi, tombol "Kirim lewat WhatsApp" langsung membuka chat ke admin.
-  admin_whatsapp: '62851233175800',
+  // Batas umur sesi admin di browser (jam). Setelah itu admin harus login lagi.
+  session_hours: 12,
 
   // Opsional: tautan "Kode sumber" di footer.
   repo_url: '',

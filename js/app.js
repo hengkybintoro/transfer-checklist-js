@@ -60,6 +60,11 @@ async function render() {
     if (!(e instanceof UserError)) console.error(e);
   }
   if (mine !== token) return; // navigasi lain sudah mengambil alih
+  if (route.admin && !route.public && !currentSession()) { // sesi berakhir saat data dimuat
+    setAfterLogin(hash);
+    location.hash = '#/admin/login';
+    return;
+  }
   paint(content, route);
   window.scrollTo(0, scrollY);
   if (!sameRoute) document.getElementById('app')?.focus({ preventScroll: true });

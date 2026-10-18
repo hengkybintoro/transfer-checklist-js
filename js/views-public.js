@@ -1,14 +1,11 @@
 // Halaman publik: beranda (event aktif) dan halaman event (form + daftar entri).
 import {
-  isActive, eventState, submitBlockReason, validateEntryInput, newEntry, encodeEntryCode, summary, sortEntries,
-  rupiah, dateID, dateTimeID, UserError,
+  isActive, eventState, submitBlockReason, validateEntryInput, summary, sortEntries, rupiah, dateID, dateTimeID, UserError,
 } from './core.js';
-import { h, copyText } from './dom.js';
-import { config, tz, today, loadPublished, stateChip, statusChip, periodText, statsStrip, field, notFound, flash } from './ui.js';
-import { myEntries, addMyEntry, removeMyEntry } from './storage.js';
-import { isServer, serverApi } from './mode.js';
-
-let justSubmitted = null; // id entri yang baru dikirim (menampilkan panel kode kirim)
+import { h } from './dom.js';
+import { datePicker } from './datepicker.js';
+import { tz, today, loadPublished, stateChip, statusChip, periodText, statsStrip, field, notFound, flash } from './ui.js';
+import { liveApi } from './mode.js';
 
 function pubWarnings(pub) {
   if (!pub.errors.length) return null;
@@ -25,9 +22,7 @@ export async function renderHome() {
 
   const body = [h('h1', null, 'Event Aktif'), h('p', { class: 'muted' }, 'Pilih event untuk mencatat transfer Anda dan melihat status verifikasinya.')];
   body.push(pubWarnings(pub));
-  if (pub.missing) {
-    body.push(h('div', { class: 'card empty' }, 'Belum ada data event yang diterbitkan.'));
-  } else if (!active.length) {
+  if (!active.length) {
     body.push(h('div', { class: 'card empty' }, 'Belum ada event yang sedang dibuka. Silakan cek lagi nanti.'));
   } else {
     body.push(h('div', { class: 'grid' }, active.map((ev) => {
@@ -43,60 +38,13 @@ export async function renderHome() {
 
 // ---------- halaman event ----------
 
-function waLink(ev, e, code) {
-  const text = [
-    `Transfer Checklist: ${ev.name}`,
-    `Nama: ${e.name}`,
-    `Nominal: ${rupiah(e.amount)}`,
-    `Tgl transfer: ${dateID(e.transfer_date)}`,
-    '',
-    `Kode: ${code}`,
-  ].join('\n');
-  const num = /^\d{8,15}$/.test(String(config.admin_whatsapp ?? '')) ? config.admin_whatsapp : '';
-  return `https://wa.me/${num}?text=${encodeURIComponent(text)}`;
-}
-
-function sendButtons(ev, item, rerender) {
-  const copy = h('button', { class: 'btn sm', type: 'button' }, 'Salin kode');
-  copy.addEventListener('click', async () => {
-    copy.textContent = (await copyText(item.code)) ? 'Tersalin ✓' : 'Gagal menyalin — salin manual';
-  });
-  return [
-    copy,
-    h('a', { class: 'btn sm', href: waLink(ev, item, item.code), target: '_blank', rel: 'noopener noreferrer' }, 'Kirim lewat WhatsApp'),
-    h('button', { class: 'btn sm danger', type: 'button', onclick: () => { removeMyEntry(item.id); rerender(); } }, 'Hapus dari perangkat'),
-  ];
-}
-
-function mineCard(ev, rerender) {
-  const mine = myEntries().filter((x) => x.eventId === ev.id);
-  if (!mine.length) return null;
-  const published = new Map(ev.entries.map((e) => [e.id, e]));
-  return h('div', { class: 'card' },
-    h('h2', null, 'Entri Anda di perangkat ini'),
-    h('p', { class: 'muted small' }, 'Entri baru berstatus "Belum diterima admin" sampai admin memasukkannya dan menerbitkan datanya. Teruskan kode kirim ke admin.'),
-    mine.map((item) => {
-      const pubEntry = published.get(item.id);
-      const fresh = item.id === justSubmitted;
-      return h('div', { class: 'stack', style: 'padding:12px 0;border-top:1px solid var(--border)' },
-        h('div', { class: 'row between' },
-          h('div', null, h('strong', null, item.name), ' · ', rupiah(item.amount), ' · ', dateID(item.transfer_date)),
-          pubEntry ? h('span', { class: 'row' }, h('span', { class: 'chip open' }, 'Sudah tercatat'), statusChip(pubEntry.status))
-            : h('span', { class: 'chip warn' }, 'Belum diterima admin')),
-        pubEntry ? null : [
-          fresh ? h('div', { class: 'flash ok', role: 'status' }, 'Tersimpan di perangkat ini. Langkah terakhir: kirim kode di bawah ke admin.') : null,
-          h('div', { class: 'codebox', 'aria-label': 'Kode kirim' }, item.code),
-          h('div', { class: 'row' }, sendButtons(ev, item, rerender)),
-        ]);
-    }));
-}
-
 function entryForm(ev, rerender) {
   const t = today();
   const err = h('div', { class: 'flash err', role: 'alert', hidden: true });
   const name = h('input', { type: 'text', id: 'f-name', name: 'name', maxlength: '80', required: true, autocomplete: 'name' });
   const amount = h('input', { type: 'text', id: 'f-amount', name: 'amount', inputmode: 'numeric', required: true, placeholder: 'mis. 1.500.000', autocomplete: 'off' });
-  const date = h('input', { type: 'date', id: 'f-date', name: 'transfer_date', required: true, max: t, value: t });
+  // Tanggal transfer dipilih dari kalender (sama seperti form event); tidak boleh melewati hari ini.
+  const date = datePicker({ id: 'f-date', value: t, today, max: () => today() });
   const submit = h('button', { class: 'btn primary', type: 'submit' }, 'Simpan entri');
   const form = h('form', { novalidate: true, class: 'card' },
     h('h2', null, 'Catat transfer'),
@@ -104,11 +52,9 @@ function entryForm(ev, rerender) {
     field('Nama', name, 'Sesuai nama pengirim di mutasi rekening.', 'f-name'),
     h('div', { class: 'fields-2' },
       field('Nominal (Rp)', amount, 'Angka bulat, contoh 1500000 atau 1.500.000.', 'f-amount'),
-      field('Tanggal transfer', date, null, 'f-date')),
+      field('Tanggal transfer', date.el, null, 'f-date')),
     submit,
-    h('p', { class: 'hint', style: 'margin-top:12px' }, isServer
-      ? 'Entri langsung tercatat dengan status Menunggu, lalu diverifikasi admin terhadap mutasi rekening.'
-      : 'Entri disimpan di perangkat Anda dan menghasilkan kode kirim. Teruskan kode itu ke admin supaya tercatat dan diverifikasi.'));
+    h('p', { class: 'hint', style: 'margin-top:12px' }, 'Entri langsung tercatat dengan status Menunggu, lalu diverifikasi admin terhadap mutasi rekening.'));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.hidden = true;
@@ -116,16 +62,10 @@ function entryForm(ev, rerender) {
     try {
       const reason = submitBlockReason(ev, today());
       if (reason) throw new UserError(reason);
-      const v = validateEntryInput({ name: name.value, amount: amount.value, transfer_date: date.value }, today());
-      if (isServer) {
-        // server memeriksa ulang semua aturan (periode memakai jam server)
-        await serverApi('POST', `events/${ev.id}/entries`, { name: name.value, amount: amount.value, transfer_date: date.value });
-        flash('ok', 'Entri tercatat dengan status Menunggu. Admin akan memverifikasinya terhadap mutasi rekening.');
-      } else {
-        const entry = newEntry(v, today());
-        addMyEntry({ eventId: ev.id, id: entry.id, name: entry.name, amount: entry.amount, transfer_date: entry.transfer_date, submitted_at: entry.submitted_at, code: encodeEntryCode(ev.id, entry) });
-        justSubmitted = entry.id;
-      }
+      validateEntryInput({ name: name.value, amount: amount.value, transfer_date: date.value }, today());
+      // database memeriksa ulang semua aturan (periode memakai jam server)
+      await liveApi('POST', `events/${ev.id}/entries`, { name: name.value, amount: amount.value, transfer_date: date.value });
+      flash('ok', 'Entri tercatat dengan status Menunggu. Admin akan memverifikasinya terhadap mutasi rekening.');
       rerender();
     } catch (x) {
       if (!(x instanceof UserError)) throw x;
@@ -157,7 +97,7 @@ export async function renderEvent(id, { rerender }) {
   const pub = await loadPublished();
   const ev = pub.byId.get(id);
   if (!ev) {
-    return notFound(pub.errors.some((e) => e.id === id) ? 'Data event ini gagal dimuat. Coba lagi nanti.' : 'Event tidak ditemukan atau belum diterbitkan.');
+    return notFound(pub.errors.some((e) => e.id === id) ? 'Data event ini gagal dimuat. Coba lagi nanti.' : 'Event tidak ditemukan.');
   }
   const t = today();
   const state = eventState(ev, t);
@@ -169,13 +109,10 @@ export async function renderEvent(id, { rerender }) {
     h('p', { class: 'muted' }, `Periode input: ${periodText(ev)}`),
     ev.description ? h('div', { class: 'card pre' }, ev.description) : null,
     state === 'open' ? entryForm(ev, rerender) : h('div', { class: 'flash warn', role: 'status' }, reason),
-    isServer ? null : mineCard(ev, rerender),
     h('div', { class: 'row between' }, h('h2', null, 'Daftar entri'),
-      h('button', { class: 'btn sm', type: 'button', onclick: async () => { await loadPublished(true); rerender(); } }, 'Muat ulang')),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => rerender() }, 'Muat ulang')),
     statsStrip(summary(ev)),
     entriesTable(ev),
-    h('p', { class: 'muted small' }, isServer
-      ? 'Catatan admin hanya ditampilkan untuk entri tidak valid.'
-      : 'Daftar ini diperbarui setiap admin menerbitkan data terbaru. Catatan admin hanya ditampilkan untuk entri tidak valid.'),
+    h('p', { class: 'muted small' }, 'Catatan admin hanya ditampilkan untuk entri tidak valid.'),
   ];
 }

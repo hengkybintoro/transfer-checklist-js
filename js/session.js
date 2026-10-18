@@ -1,33 +1,33 @@
-// Sesi admin. Mode statis: sessionStorage (gerbang tampilan). Mode server: cookie HttpOnly dari server.
-import { isServer, serverApi, setUnauthorizedHook } from './mode.js';
-import { getSession, clearSession } from './storage.js';
+// Sesi admin.
+//   supabase : token sesi dari admin_login di localStorage (diperiksa ulang oleh database di setiap aksi admin)
+//   server   : cookie HttpOnly dari server Node.js
+import { isSupabase, liveApi, setUnauthorizedHook } from './mode.js';
+import { clearSbSession } from './storage.js';
+import { verifySession } from './supabase.js';
 
-let current = null; // hanya dipakai di mode server
+let current = null;
 
 setUnauthorizedHook(() => { current = null; });
 
 export async function initSession() {
-  if (!isServer) return;
   try {
-    const d = await serverApi('GET', 'session');
+    if (isSupabase && !(await verifySession())) { current = null; return; }
+    const d = await liveApi('GET', 'session');
     current = d.admin ? { u: d.admin.u } : null;
   } catch {
     current = null;
   }
 }
 
-export const currentSession = () => (isServer ? current : getSession());
+export const currentSession = () => current;
 
-export async function serverLogin(username, password) {
-  const d = await serverApi('POST', 'admin/login', { username, password });
+export async function liveLogin(username, password) {
+  const d = await liveApi('POST', 'admin/login', { username, password });
   current = { u: d.admin.u };
 }
 
 export async function logout() {
-  if (isServer) {
-    try { await serverApi('POST', 'admin/logout', {}); } catch { /* tetap keluar di sisi klien */ }
-    current = null;
-  } else {
-    clearSession();
-  }
+  try { await liveApi('POST', 'admin/logout', {}); } catch { /* tetap keluar di sisi klien */ }
+  if (isSupabase) clearSbSession();
+  current = null;
 }

@@ -1,15 +1,31 @@
-// Mode aplikasi. "server" bila disajikan oleh server Node.js (yang menghasilkan config.js dengan mode: 'server');
-// selain itu mode statis untuk GitHub Pages (data dari file JSON + kode kirim).
+// Backend aplikasi:
+//   'supabase' (bawaan)  frontend statis (mis. GitHub Pages) + database Supabase (PostgreSQL) lewat REST (fungsi database).
+//   'server'             disajikan server Node.js (menghasilkan config.js dengan mode: 'server'); data di file JSON server.
+// Kedua backend memakai kontrak API yang sama (jalur & bentuk respons), sehingga halaman tidak perlu tahu backend-nya.
 import config from './settings.js';
 import { UserError } from './core.js';
+import { supabaseApi, sbSession, AuthExpired } from './supabase.js';
 
 export const isServer = config.mode === 'server';
+export const isSupabase = !isServer;
 
 let unauthorizedHook = () => {};
 export const setUnauthorizedHook = (fn) => { unauthorizedHook = fn; };
 
-/** Memanggil API server. Galat jaringan/HTTP diubah menjadi UserError dengan pesan dari server. */
-export async function serverApi(method, path, body) {
+/** Memanggil backend. Galat jaringan/HTTP diubah menjadi UserError dengan pesan yang aman ditampilkan. */
+export async function liveApi(method, path, body) {
+  if (isSupabase) {
+    const hadSession = Boolean(sbSession());
+    try {
+      const out = await supabaseApi(method, path, body);
+      // daftar event jatuh ke data publik bila token admin ditolak: beri tahu aplikasi bahwa sesi sudah hilang
+      if (hadSession && !sbSession()) unauthorizedHook();
+      return out;
+    } catch (e) {
+      if (e instanceof AuthExpired) unauthorizedHook();
+      throw e;
+    }
+  }
   let res;
   try {
     res = await fetch(`api/${path}`, {
