@@ -1,0 +1,12 @@
+{
+  "name": "transfer-checklist-js",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Transfer Checklist versi JavaScript statis untuk GitHub Pages",
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8080"
+  },
+  "engines": { "node": ">=20" }
+}
