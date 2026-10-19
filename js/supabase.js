@@ -13,8 +13,8 @@ import { getSbSession, setSbSession, clearSbSession } from './storage.js';
 /** Sesi admin berakhir / tidak sah. mode.js memakainya untuk membersihkan status login. */
 export class AuthExpired extends UserError {}
 
-const SETUP_HINT = 'Database Supabase belum disiapkan atau masih versi lama. Jalankan isi supabase/schema.sql versi terbaru di SQL Editor Supabase (lihat SUPABASE.md).';
-const EXPIRED = 'Sesi admin berakhir. Silakan login lagi.';
+const SETUP_HINT = 'The Supabase database is not set up yet or is out of date. Run the latest supabase/schema.sql in the Supabase SQL Editor (see SUPABASE.md).';
+const EXPIRED = 'Your admin session has expired. Please sign in again.';
 
 const base = () => String(config.supabase?.url ?? '').trim().replace(/\/+$/, '');
 const key = () => String(config.supabase?.anon_key ?? '').trim();
@@ -33,7 +33,7 @@ async function http(method, path, { body } = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new UserError('Tidak dapat menghubungi Supabase. Periksa koneksi Anda lalu coba lagi.');
+    throw new UserError('Could not reach Supabase. Check your connection and try again.');
   }
   let data = null;
   try { const t = await res.text(); data = t ? JSON.parse(t) : null; } catch { /* bukan JSON */ }
@@ -45,14 +45,14 @@ function apiError(r) {
   const d = r.data ?? {};
   const code = String(d.code ?? '');
   const msg = String(d.message ?? '');
-  if (code === 'P0001') return new UserError(msg || 'Permintaan ditolak.'); // RAISE EXCEPTION dari schema.sql: pesan aman ditampilkan
+  if (code === 'P0001') return new UserError(msg || 'Request rejected.'); // RAISE EXCEPTION dari schema.sql: pesan aman ditampilkan
   if (code === 'PT401') return new AuthExpired(EXPIRED);
   if (['PGRST202', 'PGRST205', 'PGRST200', '42883', '42P01'].includes(code)) return new UserError(SETUP_HINT);
-  if (r.status === 401) return new UserError('Kunci Supabase (anon_key) ditolak. Periksa supabase.anon_key di config.js.');
-  if (r.status === 403 || code === '42501') return new UserError('Akses ditolak oleh database. Jalankan ulang supabase/schema.sql versi terbaru (lihat SUPABASE.md).');
-  if (code.startsWith('22') || code.startsWith('23')) return new UserError('Data tidak memenuhi aturan database.');
-  if (r.status === 429) return new UserError('Terlalu banyak permintaan. Coba lagi sebentar lagi.');
-  return new UserError(`Supabase mengembalikan HTTP ${r.status}.`);
+  if (r.status === 401) return new UserError('The Supabase key (anon_key) was rejected. Check supabase.anon_key in config.js.');
+  if (r.status === 403 || code === '42501') return new UserError('Access denied by the database. Re-run the latest supabase/schema.sql (see SUPABASE.md).');
+  if (code.startsWith('22') || code.startsWith('23')) return new UserError('The data does not meet the database rules.');
+  if (r.status === 429) return new UserError('Too many requests. Please try again in a moment.');
+  return new UserError(`Supabase returned HTTP ${r.status}.`);
 }
 
 /** Memanggil fungsi database (RPC) tanpa login. */
@@ -83,11 +83,11 @@ export const sbSession = () => getSbSession();
 async function login(body) {
   const username = String(body?.username ?? '').trim();
   const password = String(body?.password ?? '');
-  if (!username || !password) throw new UserError('Username dan password wajib diisi.');
+  if (!username || !password) throw new UserError('Username and password are required.');
   const d = await rpc('admin_login', { p_username: username, p_password: password });
-  if (!d || typeof d !== 'object') throw new UserError('Respons Supabase tidak dikenali. Pastikan supabase/schema.sql versi terbaru sudah dijalankan.');
-  if (d.ok !== true) throw new UserError(String(d.error || 'Username atau password salah.'));
-  if (typeof d.token !== 'string' || !/^[a-f0-9]{64}$/.test(d.token)) throw new UserError('Respons login tidak dikenali.');
+  if (!d || typeof d !== 'object') throw new UserError('Unexpected response from Supabase. Make sure the latest supabase/schema.sql has been run.');
+  if (d.ok !== true) throw new UserError(String(d.error || 'Incorrect username or password.'));
+  if (typeof d.token !== 'string' || !/^[a-f0-9]{64}$/.test(d.token)) throw new UserError('Unexpected login response.');
   const hours = Number(config.session_hours) || 12;
   const serverUntil = Number.isFinite(d.expires_at) ? d.expires_at * 1000 : Infinity;
   setSbSession({
@@ -117,7 +117,7 @@ export async function verifySession() {
     return true;
   } catch (e) {
     if (e instanceof AuthExpired) return false;
-    if (e instanceof UserError && /Database Supabase belum|Akses ditolak|anon_key/.test(e.message)) { clearSbSession(); return false; }
+    if (e instanceof UserError && /not set up yet|Access denied|anon_key/.test(e.message)) { clearSbSession(); return false; }
     return true;
   }
 }
@@ -125,7 +125,7 @@ export async function verifySession() {
 // ---------- data publik ----------
 
 function asList(d) {
-  if (!d || !Array.isArray(d.events)) throw new UserError('Respons Supabase tidak dikenali. Pastikan supabase/schema.sql versi terbaru sudah dijalankan.');
+  if (!d || !Array.isArray(d.events)) throw new UserError('Unexpected response from Supabase. Make sure the latest supabase/schema.sql has been run.');
   return { today: d.today, events: d.events };
 }
 
@@ -137,7 +137,7 @@ async function list() {
 }
 
 async function submitEntry(eventId, body) {
-  if (!validId(eventId)) throw new UserError('Event tidak ditemukan.');
+  if (!validId(eventId)) throw new UserError('Event not found.');
   const v = validateEntryInput({ name: body?.name, amount: String(body?.amount ?? ''), transfer_date: body?.transfer_date });
   const entry = await rpc('submit_entry', { p_event_id: eventId, p_name: v.name, p_amount: v.amount, p_transfer_date: v.transfer_date });
   return { entry };
@@ -146,7 +146,7 @@ async function submitEntry(eventId, body) {
 // ---------- admin ----------
 
 const eventOf = (ev) => {
-  if (!ev || typeof ev !== 'object') throw new UserError('Respons Supabase tidak dikenali.');
+  if (!ev || typeof ev !== 'object') throw new UserError('Unexpected response from Supabase.');
   return { event: ev };
 };
 
@@ -160,7 +160,7 @@ async function adminEvents(method, parts, body) {
       p_id: ev.id, p_name: ev.name, p_description: ev.description, p_start_date: ev.start_date, p_end_date: ev.end_date,
     }));
   }
-  if (!validId(id)) throw new UserError('Event tidak ditemukan.');
+  if (!validId(id)) throw new UserError('Event not found.');
   if (parts.length === 2 && method === 'PUT') {
     const v = validateEventInput(body);
     return eventOf(await adminRpc('admin_update_event', {
@@ -178,7 +178,7 @@ async function adminEvents(method, parts, body) {
   }
   if (sub === 'entries' && /^[a-f0-9]{16}$/.test(eid ?? '')) {
     if (parts.length === 5 && leaf === 'status' && method === 'POST') {
-      if (!STATUSES.includes(body?.status)) throw new UserError('Status tidak dikenal.');
+      if (!STATUSES.includes(body?.status)) throw new UserError('Unknown status.');
       return eventOf(await adminRpc('admin_set_status', {
         p_event_id: id, p_entry_id: eid, p_status: body.status, p_note: String(body.note ?? ''),
       }));
@@ -187,7 +187,7 @@ async function adminEvents(method, parts, body) {
       return eventOf(await adminRpc('admin_delete_entry', { p_event_id: id, p_entry_id: eid }));
     }
   }
-  throw new UserError('Permintaan tidak dikenal.');
+  throw new UserError('Unknown request.');
 }
 
 // ---------- pintu masuk (jalur sama dengan API server Node.js) ----------
@@ -206,5 +206,5 @@ export async function supabaseApi(method, path, body) {
     if (b === 'logout' && method === 'POST') return logout();
     if (b === 'events') return adminEvents(method, parts.slice(1), body ?? {});
   }
-  throw new UserError('Permintaan tidak dikenal.');
+  throw new UserError('Unknown request.');
 }

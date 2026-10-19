@@ -110,11 +110,11 @@ test('alur publik: daftar kosong, kirim entri, validasi', async (t) => {
   assert.equal((await s.call('GET', '/api/events')).json.events[0].entries.length, 1);
 
   for (const [body, frag] of [
-    [{ ...ENTRY, name: '' }, /Nama wajib/],
-    [{ ...ENTRY, amount: 'abc' }, /angka bulat/],
-    [{ ...ENTRY, amount: -5 }, /angka bulat|lebih dari 0/],
-    [{ ...ENTRY, transfer_date: '2026-10-19' }, /masa depan/],
-    [{ ...ENTRY, transfer_date: 'kemarin' }, /tidak valid/],
+    [{ ...ENTRY, name: '' }, /Name is required/],
+    [{ ...ENTRY, amount: 'abc' }, /whole number/],
+    [{ ...ENTRY, amount: -5 }, /whole number|greater than 0/],
+    [{ ...ENTRY, transfer_date: '2026-10-19' }, /in the future/],
+    [{ ...ENTRY, transfer_date: 'kemarin' }, /not valid/],
   ]) {
     const r = await s.call('POST', `/api/events/${ev.id}/entries`, body);
     assert.equal(r.status, 400);
@@ -133,14 +133,14 @@ test('periode: sebelum mulai, setelah selesai, dan tutup manual ditolak di serve
   s.advance(8 * 24 * 3600 * 1000);
   const late = await s.call('POST', url, { ...ENTRY, transfer_date: '2026-10-20' });
   assert.equal(late.status, 400);
-  assert.match(late.json.error, /berakhir/);
+  assert.match(late.json.error, /ended/);
   s.advance(-8 * 24 * 3600 * 1000);
 
   // tutup manual
   assert.equal((await s.call('POST', `/api/admin/events/${ev.id}/close`, undefined, { cookie })).status, 200);
   const closed = await s.call('POST', url, ENTRY);
   assert.equal(closed.status, 400);
-  assert.match(closed.json.error, /ditutup oleh admin/);
+  assert.match(closed.json.error, /closed by an admin/);
   // buka kembali
   const re = await s.call('POST', `/api/admin/events/${ev.id}/reopen`, undefined, { cookie });
   assert.equal(re.json.event.closed_at, null);
@@ -150,7 +150,7 @@ test('periode: sebelum mulai, setelah selesai, dan tutup manual ditolak di serve
   const fut = (await s.call('POST', '/api/admin/events', { ...EVENT, name: 'Nanti', start_date: '2026-11-01', end_date: '2026-11-05' }, { cookie })).json.event;
   const early = await s.call('POST', `/api/events/${fut.id}/entries`, ENTRY);
   assert.equal(early.status, 400);
-  assert.match(early.json.error, /belum dibuka/);
+  assert.match(early.json.error, /not open yet/);
 });
 
 test('rate limit input publik: 10/menit/IP', async (t) => {
@@ -192,7 +192,7 @@ test('login: salah, benar, kunci setelah 5 gagal, cookie aman', async (t) => {
   for (let i = 0; i < 5; i++) assert.equal((await s.login('x')).status, 401); // login sukses mereset hitungan; 5 gagal memblokir
   const locked = await s.login(); // password benar pun ditolak
   assert.equal(locked.status, 429);
-  assert.match(locked.json.error, /Terlalu banyak/);
+  assert.match(locked.json.error, /Too many/);
   s.advance(16 * 60_000);
   assert.equal((await s.login()).status, 200);
 });

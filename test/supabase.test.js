@@ -61,14 +61,14 @@ const rejects = (p, re, cls = UserError) => assert.rejects(p, (e) => { assert.ok
 
 test('config belum diisi: galat jelas tanpa memanggil jaringan', async () => {
   config.supabase = { url: 'https://PROJECT-REF.supabase.co', anon_key: 'ganti-dengan-anon-key' };
-  await rejects(supabaseApi('GET', 'events'), /supabase\.url belum diisi/);
+  await rejects(supabaseApi('GET', 'events'), /supabase\.url is not set/);
   assert.equal(calls.length, 0);
 });
 
 test('blok admin lama di config.js (username + hash) diabaikan: login tetap lewat database', async () => {
   config.admin = { username: 'irene', password_sha256: 'b6596e8c458b71dcb89236a9762dcde8a1ea99992cec62a12bd627d34d7d9e30' };
-  handler = () => [200, { ok: false, error: 'Username atau password salah.' }];
-  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'password-lama' }), /Username atau password salah/);
+  handler = () => [200, { ok: false, error: 'Incorrect username or password.' }];
+  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'password-lama' }), /Incorrect username or password/);
   assert.equal(calls.length, 1);
   assert.match(calls[0].path, /^\/rest\/v1\/rpc\/admin_login/); // diteruskan ke database, tidak dicocokkan lokal
   assert.equal(sbSession(), null);
@@ -77,7 +77,7 @@ test('blok admin lama di config.js (username + hash) diabaikan: login tetap lewa
 
 test('kunci rahasia ditolak', async () => {
   config.supabase = { url: URL_BASE, anon_key: 'sb_secret_abcdefghijklmnopqrstuv' };
-  await rejects(supabaseApi('GET', 'events'), /JANGAN memakai kunci rahasia/);
+  await rejects(supabaseApi('GET', 'events'), /Do NOT use a secret/);
   assert.equal(calls.length, 0);
 });
 
@@ -98,7 +98,7 @@ test('daftar publik: rpc get_published hanya dengan apikey (tanpa Authorization)
 test('daftar: token admin ditolak (PT401) -> sesi dibuang dan data publik ditampilkan', async () => {
   loginAs();
   handler = (r) => (r.path.endsWith('/admin_list')
-    ? [401, { code: 'PT401', message: 'Sesi admin tidak valid atau sudah berakhir. Silakan login lagi.' }]
+    ? [401, { code: 'PT401', message: 'Your admin session is invalid or has expired. Please sign in again.' }]
     : [200, { today: '2026-10-18', events: [] }]);
   const d = await supabaseApi('GET', 'events');
   assert.deepEqual(d.events, []);
@@ -114,23 +114,23 @@ test('respons yang bukan hasil get_published ditolak dengan pesan setup', async 
 
 test('fungsi belum dibuat (PGRST202) -> petunjuk menjalankan schema.sql', async () => {
   handler = () => [404, { code: 'PGRST202', message: 'Could not find the function public.get_published' }];
-  await rejects(supabaseApi('GET', 'events'), /belum disiapkan.*schema\.sql/);
+  await rejects(supabaseApi('GET', 'events'), /not set up yet.*schema\.sql/);
 });
 
 test('anon_key salah (401 tanpa token) -> pesan kunci ditolak', async () => {
   handler = () => [401, { message: 'Invalid API key' }];
-  await rejects(supabaseApi('GET', 'events'), /anon_key.*ditolak/);
+  await rejects(supabaseApi('GET', 'events'), /anon_key.*rejected/);
 });
 
 test('galat jaringan -> pesan ramah', async () => {
   handler = () => { throw new TypeError('Failed to fetch'); };
-  await rejects(supabaseApi('GET', 'events'), /Tidak dapat menghubungi Supabase/);
+  await rejects(supabaseApi('GET', 'events'), /Could not reach Supabase/);
 });
 
 test('submit: memvalidasi dulu di klien, mengirim parameter RPC, mengembalikan entri', async () => {
-  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: '', amount: '1000', transfer_date: '2026-10-02' }), /Nama wajib/);
-  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: 'abc', transfer_date: '2026-10-02' }), /angka bulat/);
-  await rejects(supabaseApi('POST', 'events/BAD ID/entries', { name: 'A', amount: '1', transfer_date: '2026-10-02' }), /tidak ditemukan/);
+  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: '', amount: '1000', transfer_date: '2026-10-02' }), /Name is required/);
+  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: 'abc', transfer_date: '2026-10-02' }), /whole number/);
+  await rejects(supabaseApi('POST', 'events/BAD ID/entries', { name: 'A', amount: '1', transfer_date: '2026-10-02' }), /not found/);
   assert.equal(calls.length, 0);
 
   handler = () => [200, { id: EID, name: 'Budi', amount: 1500000, transfer_date: '2026-10-02', submitted_at: '2026-10-18T05:00:00+00:00', status: 'pending', admin_note: '', verified_at: null }];
@@ -141,12 +141,12 @@ test('submit: memvalidasi dulu di klien, mengirim parameter RPC, mengembalikan e
 });
 
 test('submit: pesan RAISE EXCEPTION (P0001) ditampilkan apa adanya; galat lain digeneralisasi', async () => {
-  handler = () => [400, { code: 'P0001', message: 'Event ini sudah ditutup oleh admin, input tidak bisa dikirim lagi.' }];
-  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: '1000', transfer_date: '2026-10-02' }), /sudah ditutup oleh admin/);
+  handler = () => [400, { code: 'P0001', message: 'This event has been closed by an admin. New entries are no longer accepted.' }];
+  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: '1000', transfer_date: '2026-10-02' }), /closed by an admin/);
   handler = () => [400, { code: '22003', message: 'bigint out of range' }];
-  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: '1000', transfer_date: '2026-10-02' }), /tidak memenuhi aturan/);
+  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: '1000', transfer_date: '2026-10-02' }), /does not meet the database rules/);
   handler = () => [429, { message: 'rate' }];
-  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: '1000', transfer_date: '2026-10-02' }), /Terlalu banyak/);
+  await rejects(supabaseApi('POST', `events/${EV_ID}/entries`, { name: 'A', amount: '1000', transfer_date: '2026-10-02' }), /Too many/);
 });
 
 // ---------- login ----------
@@ -184,23 +184,23 @@ test('login: umur lokal mengikuti session_hours, tidak melebihi umur sesi di ser
 });
 
 test('login: kolom kosong ditolak di klien; password salah / diblokir memakai pesan dari database', async () => {
-  await rejects(supabaseApi('POST', 'admin/login', { username: '', password: 'x' }), /Username dan password wajib/);
-  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: '' }), /Username dan password wajib/);
+  await rejects(supabaseApi('POST', 'admin/login', { username: '', password: 'x' }), /Username and password are required/);
+  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: '' }), /Username and password are required/);
   assert.equal(calls.length, 0);
-  handler = () => [200, { ok: false, error: 'Username atau password salah.' }];
-  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'salah' }), /Username atau password salah/);
-  handler = () => [200, { ok: false, error: 'Terlalu banyak percobaan gagal. Coba lagi dalam beberapa menit.' }];
-  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'salah' }), /Terlalu banyak percobaan/);
+  handler = () => [200, { ok: false, error: 'Incorrect username or password.' }];
+  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'salah' }), /Incorrect username or password/);
+  handler = () => [200, { ok: false, error: 'Too many failed attempts. Please try again in a few minutes.' }];
+  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'salah' }), /Too many failed attempts/);
   assert.equal(sbSession(), null);
 });
 
 test('login: respons tak dikenal (token bukan 64 hex / bukan objek) ditolak; fungsi belum ada -> petunjuk schema.sql', async () => {
   handler = () => [200, okLogin({ token: 'pendek' })];
-  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'x' }), /tidak dikenali/);
+  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'x' }), /Unexpected/);
   handler = () => [200, null];
   await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'x' }), /schema\.sql/);
   handler = () => [404, { code: 'PGRST202', message: 'Could not find the function public.admin_login' }];
-  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'x' }), /belum disiapkan.*schema\.sql/);
+  await rejects(supabaseApi('POST', 'admin/login', { username: 'irene', password: 'x' }), /not set up yet.*schema\.sql/);
   assert.equal(sbSession(), null);
 });
 
@@ -264,14 +264,14 @@ test('daftar admin: admin_list dengan p_token', async () => {
 });
 
 test('aksi admin tanpa sesi -> AuthExpired tanpa menghubungi jaringan', async () => {
-  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/close`, {}), /Sesi admin berakhir/, AuthExpired);
+  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/close`, {}), /session has expired/, AuthExpired);
   assert.equal(calls.length, 0);
 });
 
 test('token ditolak saat aksi (PT401) -> AuthExpired dan sesi lokal dibuang', async () => {
   loginAs();
-  handler = () => [401, { code: 'PT401', message: 'Sesi admin tidak valid atau sudah berakhir. Silakan login lagi.' }];
-  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/close`, {}), /Sesi admin berakhir/, AuthExpired);
+  handler = () => [401, { code: 'PT401', message: 'Your admin session is invalid or has expired. Please sign in again.' }];
+  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/close`, {}), /session has expired/, AuthExpired);
   assert.equal(sbSession(), null);
 });
 
@@ -291,8 +291,8 @@ test('buat event: slug unik terhadap id yang ada, lalu admin_create_event', asyn
 test('buat event: input tidak valid ditolak sebelum menulis', async () => {
   loginAs();
   handler = () => [200, { today: '2026-10-18', events: [] }];
-  await rejects(supabaseApi('POST', 'admin/events', { name: '', start_date: '2026-10-01', end_date: '2026-10-31' }), /Nama event wajib/);
-  await rejects(supabaseApi('POST', 'admin/events', { name: 'X', start_date: '2026-10-31', end_date: '2026-10-01' }), /tidak boleh sebelum/);
+  await rejects(supabaseApi('POST', 'admin/events', { name: '', start_date: '2026-10-01', end_date: '2026-10-31' }), /Event name is required/);
+  await rejects(supabaseApi('POST', 'admin/events', { name: 'X', start_date: '2026-10-31', end_date: '2026-10-01' }), /cannot be before/);
   assert.ok(calls.every((c) => c.url.pathname.endsWith('/admin_list')));
 });
 
@@ -307,15 +307,15 @@ test('ubah info, tutup, buka kembali: fungsi dan argumen yang tepat', async () =
   assert.deepEqual(calls.at(-1).body, { p_token: TOKEN, p_id: EV_ID, p_closed: true });
   await supabaseApi('POST', `admin/events/${EV_ID}/reopen`, {});
   assert.deepEqual(calls.at(-1).body, { p_token: TOKEN, p_id: EV_ID, p_closed: false });
-  await rejects(supabaseApi('PUT', 'admin/events/BAD ID', { name: 'x', start_date: '2026-10-01', end_date: '2026-10-02' }), /tidak ditemukan/);
+  await rejects(supabaseApi('PUT', 'admin/events/BAD ID', { name: 'x', start_date: '2026-10-01', end_date: '2026-10-02' }), /not found/);
 });
 
 test('event/entri tidak ada -> pesan dari database (P0001) diteruskan', async () => {
   loginAs();
-  handler = () => [400, { code: 'P0001', message: 'Event tidak ditemukan.' }];
-  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/close`, {}), /Event tidak ditemukan/);
-  handler = () => [400, { code: 'P0001', message: 'Entri tidak ditemukan.' }];
-  await rejects(supabaseApi('DELETE', `admin/events/${EV_ID}/entries/${EID}`), /Entri tidak ditemukan/);
+  handler = () => [400, { code: 'P0001', message: 'Event not found.' }];
+  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/close`, {}), /Event not found/);
+  handler = () => [400, { code: 'P0001', message: 'Entry not found.' }];
+  await rejects(supabaseApi('DELETE', `admin/events/${EV_ID}/entries/${EID}`), /Entry not found/);
   assert.ok(sbSession()); // galat biasa tidak membuang sesi
 });
 
@@ -326,7 +326,7 @@ test('status entri: catatan dikirim apa adanya (dirapikan database), status tak 
   assert.equal(calls.at(-1).url.pathname, '/rest/v1/rpc/admin_set_status');
   assert.deepEqual(calls.at(-1).body, { p_token: TOKEN, p_event_id: EV_ID, p_entry_id: EID, p_status: 'invalid', p_note: ' Nominal beda ' });
   const n = calls.length;
-  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/entries/${EID}/status`, { status: 'bogus' }), /Status tidak dikenal/);
+  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/entries/${EID}/status`, { status: 'bogus' }), /Unknown status/);
   assert.equal(calls.length, n);
 });
 
@@ -341,13 +341,13 @@ test('hapus entri', async () => {
 
 test('tambah entri manual: validasi klien lalu admin_add_entry (tanggal masa depan diperiksa database)', async () => {
   loginAs();
-  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/entries`, { name: '', amount: '1', transfer_date: '2026-10-02' }), /Nama wajib/);
+  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/entries`, { name: '', amount: '1', transfer_date: '2026-10-02' }), /Name is required/);
   assert.equal(calls.length, 0);
   handler = () => [200, eventRow()];
   await supabaseApi('POST', `admin/events/${EV_ID}/entries`, { name: ' Siti ', amount: 'Rp 50.000', transfer_date: '2026-10-02' });
   assert.deepEqual(calls.at(-1).body, { p_token: TOKEN, p_event_id: EV_ID, p_name: 'Siti', p_amount: 50000, p_transfer_date: '2026-10-02' });
-  handler = () => [400, { code: 'P0001', message: 'Tanggal transfer tidak boleh di masa depan.' }];
-  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/entries`, { name: 'Siti', amount: '1', transfer_date: '2099-01-01' }), /masa depan/);
+  handler = () => [400, { code: 'P0001', message: 'Transfer date cannot be in the future.' }];
+  await rejects(supabaseApi('POST', `admin/events/${EV_ID}/entries`, { name: 'Siti', amount: '1', transfer_date: '2099-01-01' }), /in the future/);
 });
 
 test('akses ditolak (42501) -> petunjuk menjalankan ulang schema.sql', async () => {
@@ -357,6 +357,6 @@ test('akses ditolak (42501) -> petunjuk menjalankan ulang schema.sql', async () 
 });
 
 test('jalur tidak dikenal ditolak', async () => {
-  await rejects(supabaseApi('GET', 'nope'), /tidak dikenal/);
-  await rejects(supabaseApi('POST', 'admin/nope', {}), /tidak dikenal/);
+  await rejects(supabaseApi('GET', 'nope'), /Unknown request/);
+  await rejects(supabaseApi('POST', 'admin/nope', {}), /Unknown request/);
 });

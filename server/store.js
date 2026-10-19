@@ -19,7 +19,7 @@ export class Store {
   }
 
   file(id) {
-    if (!validId(id)) throw new NotFoundError('Event tidak ditemukan.');
+    if (!validId(id)) throw new NotFoundError('Event not found.');
     return path.join(this.eventsDir, `${id}.json`);
   }
 
@@ -36,7 +36,7 @@ export class Store {
   async read(id) {
     let text;
     try { text = await readFile(this.file(id), 'utf8'); } catch (e) {
-      if (e.code === 'ENOENT') throw new NotFoundError('Event tidak ditemukan.');
+      if (e.code === 'ENOENT') throw new NotFoundError('Event not found.');
       throw e;
     }
     const ev = normalizeEvent(JSON.parse(text));

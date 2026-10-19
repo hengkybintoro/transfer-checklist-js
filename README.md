@@ -45,13 +45,13 @@ Mode ini menyajikan frontend yang sama dan menyimpan data di file JSON server (`
 
 ### Alur pemakaian
 
-1. Admin login di `/#/admin` → **Event baru** (nama, tanggal mulai dan selesai input, deskripsi/info rekening).
+1. Admin login di `/#/admin` → **New event** (nama, tanggal mulai dan selesai input, deskripsi/info rekening).
 2. Event otomatis tampil di beranda selama periodenya terbuka. Beranda **hanya menampilkan event yang sedang aktif** (bisa beberapa sekaligus); peserta memilih salah satu. Link langsung: `/#/e/<id>`.
-3. Peserta mengisi nama, nominal, tanggal transfer. Entri langsung tercatat dengan status **Menunggu** dan terlihat semua orang.
-4. Admin membuka halaman event (tabel diurutkan menurut tanggal transfer, seperti membaca mutasi), mencocokkan dengan rekening koran, lalu menekan **✓ Valid** atau **✗ Tidak valid** (+ catatan). Tersedia juga *Tambah entri manual*, *Hapus entri*, dan *Unduh CSV*.
-5. **Tutup event** kapan saja tanpa menunggu tanggal selesai (dan **Buka kembali** bila perlu). Event tertutup hilang dari beranda dan server menolak entri baru, tetapi daftarnya tetap bisa dilihat lewat link langsung.
+3. Peserta mengisi nama, nominal, tanggal transfer. Entri langsung tercatat dengan status **Pending** dan terlihat semua orang.
+4. Admin membuka halaman event (tabel diurutkan menurut tanggal transfer, seperti membaca mutasi), mencocokkan dengan rekening koran, lalu menekan **Valid** atau **Invalid** (+ catatan). Tersedia juga *Add an entry manually*, *Delete*, dan *Export CSV*.
+5. **Close** (di halaman event) kapan saja tanpa menunggu tanggal selesai (dan **Reopen** bila perlu). Event tertutup hilang dari beranda dan server menolak entri baru, tetapi daftarnya tetap bisa dilihat lewat link langsung.
 
-Catatan admin hanya ditampilkan ke publik untuk entri **Tidak valid**; untuk status lain server tidak mengirimnya ke pengunjung.
+Catatan admin hanya ditampilkan ke publik untuk entri **Invalid**; untuk status lain server tidak mengirimnya ke pengunjung.
 
 ### Konfigurasi (`config.json`)
 

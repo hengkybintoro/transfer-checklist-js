@@ -26,6 +26,7 @@ test('todayIn memakai zona waktu', () => {
 test('parseAmount', () => {
   assert.equal(c.parseAmount('1500000'), 1500000);
   assert.equal(c.parseAmount('Rp 1.500.000'), 1500000);
+  assert.equal(c.parseAmount('Rp 1,500,000'), 1500000);
   assert.equal(c.parseAmount('rp. 1,500,000'), 1500000);
   assert.equal(c.parseAmount(' 50 000 '), 50000);
   for (const bad of ['', 'abc', '0', '-5', '1.5', '12.34', '1e9', '1.500.00', String(c.LIMITS.amountMax + 1)]) {
@@ -71,9 +72,9 @@ test('eventState: tanggal inklusif, tutup manual menang', () => {
 test('submitBlockReason', () => {
   const ev = mk();
   assert.equal(c.submitBlockReason(ev, '2026-10-15'), '');
-  assert.match(c.submitBlockReason(ev, '2026-10-01'), /belum dibuka/);
-  assert.match(c.submitBlockReason(ev, '2026-11-01'), /berakhir/);
-  assert.match(c.submitBlockReason(c.closeEvent(ev, 'a'), '2026-10-15'), /ditutup oleh admin/);
+  assert.match(c.submitBlockReason(ev, '2026-10-01'), /not open yet/);
+  assert.match(c.submitBlockReason(ev, '2026-11-01'), /ended/);
+  assert.match(c.submitBlockReason(c.closeEvent(ev, 'a'), '2026-10-15'), /closed by an admin/);
 });
 
 test('validateEventInput', () => {
@@ -146,7 +147,7 @@ test('sortEntries', () => {
 test('toCSV: kutip & anti formula injection', () => {
   const ev = mk({ entries: [entry({ name: '=HYPERLINK("x")' }), entry({ name: 'Ani, "S"' })] });
   const csv = c.toCSV(ev, TZ);
-  assert.ok(csv.startsWith('﻿Nama,Nominal'));
+  assert.ok(csv.startsWith('﻿Name,Amount'));
   assert.ok(csv.includes(`"'=HYPERLINK(""x"")"`));
   assert.ok(csv.includes('"Ani, ""S"""'));
   assert.ok(csv.includes('\r\n'));
@@ -170,10 +171,10 @@ test('normalizeEvent: bulat-balik stabil & menolak data rusak', () => {
 });
 
 test('format tampilan', () => {
-  assert.equal(c.rupiah(1500000), 'Rp 1.500.000');
+  assert.equal(c.rupiah(1500000), 'Rp 1,500,000');
   assert.equal(c.rupiah(0), 'Rp 0');
-  assert.equal(c.dateID('2026-10-05'), '5 Okt 2026');
-  assert.equal(c.dateTimeID('2026-10-12T03:05:00Z', TZ), '12 Okt 2026 10:05');
+  assert.equal(c.formatDate('2026-10-05'), '5 Oct 2026');
+  assert.equal(c.formatDateTime('2026-10-12T03:05:00Z', TZ), '12 Oct 2026 10:05');
 });
 
 test('kalender: addDays & addMonths', () => {
@@ -205,8 +206,8 @@ test('kalender: monthGrid mulai Senin dan lengkap', () => {
 });
 
 test('kalender: label', () => {
-  assert.equal(c.dateLong('2026-10-18'), '18 Oktober 2026');
-  assert.equal(c.WEEKDAYS_SHORT[0], 'Sen');
+  assert.equal(c.dateLong('2026-10-18'), '18 October 2026');
+  assert.equal(c.WEEKDAYS_SHORT[0], 'Mon');
   assert.equal(c.daysInMonth(2028, 2), 29);
   assert.equal(c.daysInMonth(2026, 2), 28);
 });

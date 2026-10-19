@@ -17,7 +17,7 @@ export const LIMITS = Object.freeze({
 /** Error yang pesannya aman ditampilkan ke pengguna. */
 export class UserError extends Error {}
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ---------- tanggal ----------
 
@@ -43,7 +43,8 @@ export function dateIn(tz, when) {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-export function dateID(s) {
+/** Contoh: "18 Oct 2026". */
+export function formatDate(s) {
   if (!isDate(s)) return s;
   const [y, m, d] = s.split('-').map(Number);
   return `${d} ${MONTHS[m - 1]} ${y}`;
@@ -51,8 +52,8 @@ export function dateID(s) {
 
 // ----- bantuan kalender (untuk pemilih tanggal) -----
 
-export const MONTHS_LONG = Object.freeze(['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']);
-export const WEEKDAYS_SHORT = Object.freeze(['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']); // pekan dimulai Senin
+export const MONTHS_LONG = Object.freeze(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']);
+export const WEEKDAYS_SHORT = Object.freeze(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']); // pekan dimulai Senin
 
 const pad2 = (n) => String(n).padStart(2, '0');
 export const makeDate = (y, m, d) => `${String(y).padStart(4, '0')}-${pad2(m)}-${pad2(d)}`;
@@ -86,39 +87,40 @@ export function monthGrid(year, month) {
   return weeks;
 }
 
-/** Contoh: "18 Oktober 2026" (dipakai sebagai label aksesibilitas). */
+/** Contoh: "18 October 2026" (dipakai sebagai label aksesibilitas). */
 export function dateLong(iso) {
   if (!isDate(iso)) return iso;
   const [y, m, d] = parseDateParts(iso);
   return `${d} ${MONTHS_LONG[m - 1]} ${y}`;
 }
 
-export function dateTimeID(iso, tz) {
+/** Contoh: "18 Oct 2026 19:49" di zona waktu tz. */
+export function formatDateTime(iso, tz) {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return iso;
   const day = dateIn(tz, t);
   const time = new Intl.DateTimeFormat('en-GB', {
     timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(t);
-  return `${dateID(day)} ${time}`;
+  return `${formatDate(day)} ${time}`;
 }
 
 export function rupiah(n) {
   const s = String(Math.trunc(Number(n) || 0));
-  return 'Rp ' + s.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return 'Rp ' + s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 // ---------- nominal & teks ----------
 
-/** "Rp 1.500.000" / "1500000" / "1,500,000" -> 1500000. Hanya bilangan bulat rupiah. */
+/** "Rp 1,500,000" / "1.500.000" / "1500000" -> 1500000. Hanya bilangan bulat rupiah. */
 export function parseAmount(input) {
   let s = String(input ?? '').trim().replace(/^rp\.?\s*/i, '').replace(/\s+/g, '');
-  if (s === '') throw new UserError('Nominal wajib diisi.');
+  if (s === '') throw new UserError('Amount is required.');
   if (/^\d{1,3}([.,]\d{3})+$/.test(s)) s = s.replace(/[.,]/g, '');
-  else if (!/^\d+$/.test(s)) throw new UserError('Nominal harus berupa angka bulat rupiah, contoh 1500000 atau 1.500.000.');
+  else if (!/^\d+$/.test(s)) throw new UserError('Amount must be a whole number in rupiah, e.g. 1500000 or 1,500,000.');
   const n = Number(s);
-  if (!Number.isSafeInteger(n) || n <= 0) throw new UserError('Nominal harus lebih dari 0.');
-  if (n > LIMITS.amountMax) throw new UserError('Nominal terlalu besar.');
+  if (!Number.isSafeInteger(n) || n <= 0) throw new UserError('Amount must be greater than 0.');
+  if (n > LIMITS.amountMax) throw new UserError('Amount is too large.');
   return n;
 }
 
@@ -127,17 +129,17 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 
 export function cleanName(input) {
   const s = String(input ?? '').replace(/\s+/g, ' ').trim();
-  if (s === '') throw new UserError('Nama wajib diisi.');
-  if ([...s].length > LIMITS.name) throw new UserError(`Nama maksimal ${LIMITS.name} karakter.`);
-  if (CONTROL.test(s)) throw new UserError('Nama mengandung karakter yang tidak diizinkan.');
+  if (s === '') throw new UserError('Name is required.');
+  if ([...s].length > LIMITS.name) throw new UserError(`Name must be at most ${LIMITS.name} characters.`);
+  if (CONTROL.test(s)) throw new UserError('Name contains characters that are not allowed.');
   return s;
 }
 
 function cleanText(input, max, label) {
   const s = String(input ?? '').replace(/\r\n/g, '\n').trim();
-  if ([...s].length > max) throw new UserError(`${label} maksimal ${max} karakter.`);
+  if ([...s].length > max) throw new UserError(`${label} must be at most ${max} characters.`);
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(s)) throw new UserError(`${label} mengandung karakter yang tidak diizinkan.`);
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(s)) throw new UserError(`${label} contains characters that are not allowed.`);
   return s;
 }
 
@@ -193,7 +195,7 @@ export function closedManually(ev) {
   return Boolean(ev.closed_at);
 }
 
-export const STATE_LABEL = Object.freeze({ upcoming: 'Belum dibuka', open: 'Dibuka', closed: 'Ditutup' });
+export const STATE_LABEL = Object.freeze({ upcoming: 'Upcoming', open: 'Open', closed: 'Closed' });
 
 export function closeEvent(ev, by, now = new Date()) {
   const out = structuredClone(ev);
@@ -212,13 +214,13 @@ export function reopenEvent(ev) {
 // ---------- event ----------
 
 export function validateEventInput(input) {
-  const name = cleanText(input.name, LIMITS.eventName, 'Nama event');
-  if (name === '') throw new UserError('Nama event wajib diisi.');
-  if (name.includes('\n')) throw new UserError('Nama event harus satu baris.');
-  const description = cleanText(input.description, LIMITS.description, 'Deskripsi');
-  if (!isDate(input.start_date)) throw new UserError('Tanggal mulai tidak valid.');
-  if (!isDate(input.end_date)) throw new UserError('Tanggal selesai tidak valid.');
-  if (input.end_date < input.start_date) throw new UserError('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+  const name = cleanText(input.name, LIMITS.eventName, 'Event name');
+  if (name === '') throw new UserError('Event name is required.');
+  if (name.includes('\n')) throw new UserError('Event name must be a single line.');
+  const description = cleanText(input.description, LIMITS.description, 'Description');
+  if (!isDate(input.start_date)) throw new UserError('Start date is not valid.');
+  if (!isDate(input.end_date)) throw new UserError('End date is not valid.');
+  if (input.end_date < input.start_date) throw new UserError('End date cannot be before the start date.');
   return { name, description, start_date: input.start_date, end_date: input.end_date };
 }
 
@@ -248,8 +250,8 @@ export function validateEntryInput(input, today) {
   const name = cleanName(input.name);
   const amount = parseAmount(input.amount);
   const transfer_date = input.transfer_date;
-  if (!isDate(transfer_date)) throw new UserError('Tanggal transfer tidak valid.');
-  if (today && transfer_date > today) throw new UserError('Tanggal transfer tidak boleh di masa depan.');
+  if (!isDate(transfer_date)) throw new UserError('Transfer date is not valid.');
+  if (today && transfer_date > today) throw new UserError('Transfer date cannot be in the future.');
   return { name, amount, transfer_date };
 }
 
@@ -271,23 +273,23 @@ export function newEntry(input, today, now = new Date(), id = newEntryId()) {
 export function submitBlockReason(ev, today) {
   switch (eventState(ev, today)) {
     case 'open': return '';
-    case 'upcoming': return `Event ini belum dibuka. Input dimulai ${dateID(ev.start_date)}.`;
+    case 'upcoming': return `This event is not open yet. Submissions start on ${formatDate(ev.start_date)}.`;
     default:
       return closedManually(ev)
-        ? 'Event ini sudah ditutup oleh admin, input tidak bisa dikirim lagi.'
-        : `Periode input event ini sudah berakhir (${dateID(ev.end_date)}).`;
+        ? 'This event has been closed by an admin. New entries are no longer accepted.'
+        : `The submission period ended on ${formatDate(ev.end_date)}.`;
   }
 }
 
 /** Merapikan catatan admin (dipakai juga oleh mode Supabase). */
-export const cleanAdminNote = (note) => cleanText(note, LIMITS.adminNote, 'Catatan');
+export const cleanAdminNote = (note) => cleanText(note, LIMITS.adminNote, 'Note');
 
 export function setStatus(ev, entryId, status, note, now = new Date()) {
-  if (!STATUSES.includes(status)) throw new UserError('Status tidak dikenal.');
+  if (!STATUSES.includes(status)) throw new UserError('Unknown status.');
   const adminNote = cleanAdminNote(note);
   const out = structuredClone(ev);
   const e = out.entries.find((x) => x.id === entryId);
-  if (!e) throw new UserError('Entri tidak ditemukan.');
+  if (!e) throw new UserError('Entry not found.');
   e.status = status;
   e.admin_note = adminNote;
   e.verified_at = status === STATUS.PENDING ? null : now.toISOString();
@@ -298,7 +300,7 @@ export function deleteEntry(ev, entryId) {
   const out = structuredClone(ev);
   const n = out.entries.length;
   out.entries = out.entries.filter((x) => x.id !== entryId);
-  if (out.entries.length === n) throw new UserError('Entri tidak ditemukan.');
+  if (out.entries.length === n) throw new UserError('Entry not found.');
   return out;
 }
 
@@ -338,32 +340,32 @@ export function sortEntries(entries, by = 'transfer', dir = 'asc') {
   });
 }
 
-// ---------- data event (file JSON) ----------
+// ---------- data event ----------
 
 /**
- * Validasi ketat sebuah objek event dari sumber yang tidak dipercaya (file terbit, file impor,
- * localStorage). Mengembalikan objek baru dengan urutan field tetap; melempar UserError bila rusak.
+ * Validasi ketat sebuah objek event dari sumber yang tidak dipercaya (respons backend, localStorage).
+ * Mengembalikan objek baru dengan urutan field tetap; melempar UserError bila rusak.
  */
 export function normalizeEvent(raw) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new UserError('Format event tidak valid.');
-  if (!validId(raw.id)) throw new UserError('ID event tidak valid.');
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new UserError('Invalid event format.');
+  if (!validId(raw.id)) throw new UserError('Invalid event ID.');
   const v = validateEventInput(raw);
-  if (!isIso(raw.created_at)) throw new UserError('created_at tidak valid.');
+  if (!isIso(raw.created_at)) throw new UserError('Invalid created_at.');
   const closedAt = raw.closed_at == null || raw.closed_at === '' ? null : raw.closed_at;
-  if (closedAt !== null && !isIso(closedAt)) throw new UserError('closed_at tidak valid.');
-  if (!Array.isArray(raw.entries)) throw new UserError('Daftar entri tidak valid.');
-  if (raw.entries.length > LIMITS.entries) throw new UserError('Jumlah entri melebihi batas.');
+  if (closedAt !== null && !isIso(closedAt)) throw new UserError('Invalid closed_at.');
+  if (!Array.isArray(raw.entries)) throw new UserError('Invalid entry list.');
+  if (raw.entries.length > LIMITS.entries) throw new UserError('Too many entries.');
   const seen = new Set();
   const entries = raw.entries.map((e) => {
-    if (e === null || typeof e !== 'object') throw new UserError('Entri tidak valid.');
-    if (!validEntryId(e.id)) throw new UserError('ID entri tidak valid.');
-    if (seen.has(e.id)) throw new UserError('ID entri ganda.');
+    if (e === null || typeof e !== 'object') throw new UserError('Invalid entry.');
+    if (!validEntryId(e.id)) throw new UserError('Invalid entry ID.');
+    if (seen.has(e.id)) throw new UserError('Duplicate entry ID.');
     seen.add(e.id);
     const base = validateEntryInput({ name: e.name, amount: String(e.amount), transfer_date: e.transfer_date });
-    if (!isIso(e.submitted_at)) throw new UserError('submitted_at tidak valid.');
-    if (!STATUSES.includes(e.status)) throw new UserError('Status entri tidak valid.');
+    if (!isIso(e.submitted_at)) throw new UserError('Invalid submitted_at.');
+    if (!STATUSES.includes(e.status)) throw new UserError('Invalid entry status.');
     const verifiedAt = e.verified_at == null ? null : e.verified_at;
-    if (verifiedAt !== null && !isIso(verifiedAt)) throw new UserError('verified_at tidak valid.');
+    if (verifiedAt !== null && !isIso(verifiedAt)) throw new UserError('Invalid verified_at.');
     return {
       id: e.id,
       name: base.name,
@@ -371,7 +373,7 @@ export function normalizeEvent(raw) {
       transfer_date: base.transfer_date,
       submitted_at: e.submitted_at,
       status: e.status,
-      admin_note: cleanText(e.admin_note, LIMITS.adminNote, 'Catatan'),
+      admin_note: cleanText(e.admin_note, LIMITS.adminNote, 'Note'),
       verified_at: verifiedAt,
     };
   });
@@ -400,14 +402,14 @@ function csvCell(v, isText) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-const STATUS_LABEL = { pending: 'Menunggu', valid: 'Valid', invalid: 'Tidak valid' };
+const STATUS_LABEL = { pending: 'Pending', valid: 'Valid', invalid: 'Invalid' };
 export const statusLabel = (s) => STATUS_LABEL[s] ?? s;
 
 export function toCSV(ev, tz) {
-  const rows = [['Nama', 'Nominal', 'Tanggal Transfer', 'Waktu Input', 'Status', 'Catatan Admin']];
+  const rows = [['Name', 'Amount', 'Transfer date', 'Submitted', 'Status', 'Admin note']];
   for (const e of sortEntries(ev.entries, 'transfer')) {
     rows.push([
-      csvCell(e.name, true), String(e.amount), e.transfer_date, csvCell(dateTimeID(e.submitted_at, tz), true),
+      csvCell(e.name, true), String(e.amount), e.transfer_date, csvCell(formatDateTime(e.submitted_at, tz), true),
       statusLabel(e.status), csvCell(e.admin_note, true),
     ]);
   }
@@ -440,18 +442,18 @@ export function isSecretSupabaseKey(key) {
 /** Pesan masalah pada config.supabase (atau '' bila layak dipakai). */
 export function supabaseProblem(cfg) {
   const s = cfg?.supabase;
-  const hint = 'Isi supabase.url dan supabase.anon_key di config.js (lihat SUPABASE.md).';
-  if (!s || typeof s !== 'object') return `Konfigurasi Supabase belum diisi. ${hint}`;
+  const hint = 'Set supabase.url and supabase.anon_key in config.js (see SUPABASE.md).';
+  if (!s || typeof s !== 'object') return `Supabase is not configured. ${hint}`;
   const rawUrl = String(s.url ?? '').trim();
   const key = String(s.anon_key ?? '').trim();
-  if (rawUrl === '' || /project-ref|ganti/i.test(rawUrl)) return `supabase.url belum diisi. ${hint}`;
+  if (rawUrl === '' || /project-ref|ganti/i.test(rawUrl)) return `supabase.url is not set. ${hint}`;
   let u;
-  try { u = new URL(rawUrl); } catch { return `supabase.url tidak valid (contoh: https://abcdefgh.supabase.co). ${hint}`; }
+  try { u = new URL(rawUrl); } catch { return `supabase.url is not valid (e.g. https://abcdefgh.supabase.co). ${hint}`; }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
-  if (!(u.protocol === 'https:' || (u.protocol === 'http:' && local))) return 'supabase.url harus diawali https:// (http:// hanya untuk localhost).';
-  if (u.pathname.replace(/\/+$/, '') !== '' || u.search || u.hash) return 'supabase.url hanya berisi alamat dasar proyek, tanpa path (contoh: https://abcdefgh.supabase.co).';
-  if (key === '' || /ganti|isi-dengan/i.test(key) || key.length < 20) return `supabase.anon_key belum diisi. ${hint}`;
-  if (isSecretSupabaseKey(key)) return 'JANGAN memakai kunci rahasia (service_role / secret) di config.js — file itu publik. Pakai kunci "anon" atau "publishable".';
-  try { new Intl.DateTimeFormat('en-US', { timeZone: cfg.timezone }); } catch { return `Zona waktu "${cfg.timezone}" tidak dikenal.`; }
+  if (!(u.protocol === 'https:' || (u.protocol === 'http:' && local))) return 'supabase.url must start with https:// (http:// is only allowed for localhost).';
+  if (u.pathname.replace(/\/+$/, '') !== '' || u.search || u.hash) return 'supabase.url must be the bare project URL without a path (e.g. https://abcdefgh.supabase.co).';
+  if (key === '' || /ganti|isi-dengan/i.test(key) || key.length < 20) return `supabase.anon_key is not set. ${hint}`;
+  if (isSecretSupabaseKey(key)) return 'Do NOT use a secret or service_role key in config.js — that file is public. Use the "anon" or "publishable" key.';
+  try { new Intl.DateTimeFormat('en-US', { timeZone: cfg.timezone }); } catch { return `Unknown time zone "${cfg.timezone}".`; }
   return '';
 }

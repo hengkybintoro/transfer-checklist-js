@@ -62,9 +62,9 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
   }
 
   async function readJson(req, limit = BODY_LIMIT) {
-    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Content-Type harus application/json.');
+    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Content-Type must be application/json.');
     const declared = Number(req.headers['content-length']);
-    if (Number.isFinite(declared) && declared > limit) throw new HttpError(413, 'Permintaan terlalu besar.');
+    if (Number.isFinite(declared) && declared > limit) throw new HttpError(413, 'Request is too large.');
     const chunks = [];
     let size = 0;
     let tooBig = false;
@@ -78,30 +78,30 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
       req.on('error', reject);
       req.on('close', resolve);
     });
-    if (tooBig) throw new HttpError(413, 'Permintaan terlalu besar.');
+    if (tooBig) throw new HttpError(413, 'Request is too large.');
     let data;
-    try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new HttpError(400, 'Body bukan JSON yang valid.'); }
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new HttpError(400, 'Body harus berupa objek JSON.');
+    try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new HttpError(400, 'Body is not valid JSON.'); }
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new HttpError(400, 'Body must be a JSON object.');
     return data;
   }
 
   function checkOrigin(req) {
-    if (req.headers['x-tc-request'] !== '1') throw new HttpError(403, 'Permintaan ditolak (header keamanan tidak ada).');
+    if (req.headers['x-tc-request'] !== '1') throw new HttpError(403, 'Request rejected (missing security header).');
     const origin = req.headers.origin;
     if (!origin) return;
     let host;
-    try { host = new URL(origin).host; } catch { throw new HttpError(403, 'Origin tidak valid.'); }
+    try { host = new URL(origin).host; } catch { throw new HttpError(403, 'Invalid origin.'); }
     const ok = host === req.headers.host
       || (config.base_url && origin === config.base_url)
       || (config.trust_proxy && host === req.headers['x-forwarded-host']);
-    if (!ok) throw new HttpError(403, 'Origin tidak diizinkan.');
+    if (!ok) throw new HttpError(403, 'Origin not allowed.');
   }
 
   const sessionOf = (req) => sessions.verify(parseCookies(req.headers.cookie)[COOKIE]);
 
   function needAdmin(req) {
     const s = sessionOf(req);
-    if (!s) throw new HttpError(401, 'Sesi admin tidak ada atau sudah berakhir. Silakan login.');
+    if (!s) throw new HttpError(401, 'Your admin session is missing or has expired. Please sign in.');
     return s;
   }
 
@@ -147,15 +147,15 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
     }
 
     if (a === 'events' && c === 'entries' && parts.length === 3 && method === 'POST') {
-      if (!validId(b)) throw new NotFoundError('Event tidak ditemukan.');
-      if (!entryLimiter.allow(ip)) throw new HttpError(429, 'Terlalu banyak input. Coba lagi sebentar lagi.');
+      if (!validId(b)) throw new NotFoundError('Event not found.');
+      if (!entryLimiter.allow(ip)) throw new HttpError(429, 'Too many submissions. Please try again in a moment.');
       const body = await readJson(req);
       let created;
       await store.update(b, (ev) => {
         const today = todayIn(tz, now());
         const reason = submitBlockReason(ev, today);
         if (reason) throw new UserError(reason);
-        if (ev.entries.length >= LIMITS.entries) throw new UserError('Jumlah entri event ini sudah mencapai batas.');
+        if (ev.entries.length >= LIMITS.entries) throw new UserError('This event has reached its entry limit.');
         created = newEntry({ name: body.name, amount: String(body.amount ?? ''), transfer_date: body.transfer_date }, today, now());
         ev.entries.push(created);
         return ev;
@@ -163,18 +163,18 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
       return send(res, 201, { entry: { ...created, admin_note: '' } });
     }
 
-    if (a !== 'admin') throw new HttpError(404, 'Endpoint tidak ditemukan.');
+    if (a !== 'admin') throw new HttpError(404, 'Endpoint not found.');
 
     if (b === 'login' && parts.length === 2) {
-      if (method !== 'POST') throw new HttpError(405, 'Metode tidak diizinkan.');
+      if (method !== 'POST') throw new HttpError(405, 'Method not allowed.');
       const wait = loginLimiter.isBlocked(ip);
-      if (wait) throw new HttpError(429, `Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(wait / 60000)} menit.`);
+      if (wait) throw new HttpError(429, `Too many failed attempts. Please try again in ${Math.ceil(wait / 60000)} minute(s).`);
       const body = await readJson(req);
       const okUser = secureEqual(body.username ?? '', config.admin.username);
       const okPass = secureEqual(body.password ?? '', config.admin.password);
       if (!(okUser && okPass)) {
         loginLimiter.fail(ip);
-        throw new HttpError(401, 'Username atau password salah.');
+        throw new HttpError(401, 'Incorrect username or password.');
       }
       loginLimiter.reset(ip);
       const token = sessions.create(config.admin.username);
@@ -184,19 +184,19 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
     }
 
     if (b === 'logout' && parts.length === 2) {
-      if (method !== 'POST') throw new HttpError(405, 'Metode tidak diizinkan.');
+      if (method !== 'POST') throw new HttpError(405, 'Method not allowed.');
       return send(res, 200, { ok: true }, { 'Set-Cookie': cookieHeader('', { secure: config.secure, maxAgeSec: 0 }) });
     }
 
     const sess = needAdmin(req);
-    if (b !== 'events') throw new HttpError(404, 'Endpoint tidak ditemukan.');
+    if (b !== 'events') throw new HttpError(404, 'Endpoint not found.');
 
     if (parts.length === 2 && method === 'POST') {
       const ev = await store.create(await readJson(req), now());
       return send(res, 201, { event: ev });
     }
 
-    if (!validId(c)) throw new NotFoundError('Event tidak ditemukan.');
+    if (!validId(c)) throw new NotFoundError('Event not found.');
 
     if (parts.length === 3 && method === 'PUT') {
       const body = await readJson(req);
@@ -211,7 +211,7 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
     if (parts.length === 4 && d === 'entries' && method === 'POST') {
       const body = await readJson(req);
       return send(res, 201, { event: await store.update(c, (ev) => {
-        if (ev.entries.length >= LIMITS.entries) throw new UserError('Jumlah entri event ini sudah mencapai batas.');
+        if (ev.entries.length >= LIMITS.entries) throw new UserError('This event has reached its entry limit.');
         ev.entries.push(newEntry({ name: body.name, amount: String(body.amount ?? ''), transfer_date: body.transfer_date }, todayIn(tz, now()), now()));
         return ev;
       }) });
@@ -225,7 +225,7 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
         return send(res, 200, { event: await store.update(c, (ev) => deleteEntry(ev, e)) });
       }
     }
-    throw new HttpError(404, 'Endpoint tidak ditemukan.');
+    throw new HttpError(404, 'Endpoint not found.');
   }
 
   return async function handler(req, res) {
@@ -234,23 +234,23 @@ export function createApp({ config, store, root, now = () => new Date(), log = (
     let pathname = '/';
     baseHeaders(res);
     try {
-      try { pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { throw new HttpError(400, 'URL tidak valid.'); }
+      try { pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { throw new HttpError(400, 'Invalid URL.'); }
 
       if (pathname === '/healthz') {
         send(res, 200, 'ok\n');
       } else if (pathname === '/api' || pathname.startsWith('/api/')) {
         await api(req, res, pathname, ip);
       } else if (req.method === 'GET' || req.method === 'HEAD') {
-        if (!(await serveStatic(req, res, pathname))) send(res, 404, 'Tidak ditemukan\n');
+        if (!(await serveStatic(req, res, pathname))) send(res, 404, 'Not found\n');
       } else {
-        throw new HttpError(405, 'Metode tidak diizinkan.');
+        throw new HttpError(405, 'Method not allowed.');
       }
     } catch (err) {
       let status = 500;
-      let message = 'Terjadi kesalahan di server.';
+      let message = 'Something went wrong on the server.';
       if (err instanceof HttpError) { status = err.status; message = err.message; }
       else if (err instanceof NotFoundError) { status = 404; message = err.message; }
-      else if (err instanceof UserError) { status = /tidak ditemukan\.$/.test(err.message) ? 404 : 400; message = err.message; }
+      else if (err instanceof UserError) { status = /not found\.$/.test(err.message) ? 404 : 400; message = err.message; }
       else log(`ERROR ${req.method} ${pathname}: ${err.stack ?? err}`);
       if (!res.headersSent) send(res, status, { error: message }, status === 413 ? { Connection: 'close' } : {});
       else res.end();

@@ -36,13 +36,13 @@ export async function liveApi(method, path, body) {
       body: method === 'GET' || body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new UserError('Tidak dapat menghubungi server. Periksa koneksi Anda lalu coba lagi.');
+    throw new UserError('Could not reach the server. Check your connection and try again.');
   }
   let data = null;
   try { data = await res.json(); } catch { /* bukan JSON */ }
   if (!res.ok) {
     if (res.status === 401 && path.startsWith('admin/') && path !== 'admin/login') unauthorizedHook();
-    throw new UserError(data?.error ?? `Server mengembalikan HTTP ${res.status}.`);
+    throw new UserError(data?.error ?? `The server returned HTTP ${res.status}.`);
   }
   return data ?? {};
 }

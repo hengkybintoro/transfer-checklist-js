@@ -114,7 +114,7 @@ language plpgsql set search_path = ''
 as $$
 begin
   if (select count(*) from public.entries x where x.event_id = new.event_id) >= 5000 then
-    raise exception 'Jumlah entri event ini sudah mencapai batas.' using errcode = 'P0001';
+    raise exception 'This event has reached its entry limit.' using errcode = 'P0001';
   end if;
   return new;
 end $$;
@@ -177,13 +177,13 @@ declare
   v_a public.admins;
 begin
   if p_token is null or p_token !~ '^[a-f0-9]{64}$' then
-    raise exception 'Sesi admin tidak valid atau sudah berakhir. Silakan login lagi.' using errcode = 'PT401';
+    raise exception 'Your admin session is invalid or has expired. Please sign in again.' using errcode = 'PT401';
   end if;
   select a.* into v_a
     from public.admin_sessions s join public.admins a on a.id = s.admin_id
    where s.token_hash = encode(sha256(convert_to(p_token, 'utf8')), 'hex') and s.expires_at > now();
   if not found then
-    raise exception 'Sesi admin tidak valid atau sudah berakhir. Silakan login lagi.' using errcode = 'PT401';
+    raise exception 'Your admin session is invalid or has expired. Please sign in again.' using errcode = 'PT401';
   end if;
   return v_a;
 end $$;
@@ -217,21 +217,21 @@ declare
   v_name text := btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g'));
 begin
   if v_name = '' then
-    raise exception 'Nama wajib diisi.' using errcode = 'P0001';
+    raise exception 'Name is required.' using errcode = 'P0001';
   elsif char_length(v_name) > 80 then
-    raise exception 'Nama maksimal 80 karakter.' using errcode = 'P0001';
+    raise exception 'Name must be at most 80 characters.' using errcode = 'P0001';
   elsif v_name ~ '[[:cntrl:]]' then
-    raise exception 'Nama mengandung karakter yang tidak diizinkan.' using errcode = 'P0001';
+    raise exception 'Name contains characters that are not allowed.' using errcode = 'P0001';
   end if;
   if p_amount is null or p_amount <= 0 then
-    raise exception 'Nominal harus lebih dari 0.' using errcode = 'P0001';
+    raise exception 'Amount must be greater than 0.' using errcode = 'P0001';
   elsif p_amount > 1000000000000 then
-    raise exception 'Nominal terlalu besar.' using errcode = 'P0001';
+    raise exception 'Amount is too large.' using errcode = 'P0001';
   end if;
   if p_date is null then
-    raise exception 'Tanggal transfer tidak valid.' using errcode = 'P0001';
+    raise exception 'Transfer date is not valid.' using errcode = 'P0001';
   elsif p_date > public.app_today() then
-    raise exception 'Tanggal transfer tidak boleh di masa depan.' using errcode = 'P0001';
+    raise exception 'Transfer date cannot be in the future.' using errcode = 'P0001';
   end if;
   return v_name;
 end $$;
@@ -243,13 +243,13 @@ as $$
 declare
   v_name text := btrim(coalesce(p_name, ''));
 begin
-  if v_name = '' then raise exception 'Nama event wajib diisi.' using errcode = 'P0001'; end if;
-  if char_length(v_name) > 100 then raise exception 'Nama event maksimal 100 karakter.' using errcode = 'P0001'; end if;
-  if v_name ~ '[\r\n]' then raise exception 'Nama event harus satu baris.' using errcode = 'P0001'; end if;
-  if char_length(coalesce(p_description, '')) > 1000 then raise exception 'Deskripsi maksimal 1000 karakter.' using errcode = 'P0001'; end if;
-  if p_start is null then raise exception 'Tanggal mulai tidak valid.' using errcode = 'P0001'; end if;
-  if p_end is null then raise exception 'Tanggal selesai tidak valid.' using errcode = 'P0001'; end if;
-  if p_end < p_start then raise exception 'Tanggal selesai tidak boleh sebelum tanggal mulai.' using errcode = 'P0001'; end if;
+  if v_name = '' then raise exception 'Event name is required.' using errcode = 'P0001'; end if;
+  if char_length(v_name) > 100 then raise exception 'Event name must be at most 100 characters.' using errcode = 'P0001'; end if;
+  if v_name ~ '[\r\n]' then raise exception 'Event name must be a single line.' using errcode = 'P0001'; end if;
+  if char_length(coalesce(p_description, '')) > 1000 then raise exception 'Description must be at most 1000 characters.' using errcode = 'P0001'; end if;
+  if p_start is null then raise exception 'Start date is not valid.' using errcode = 'P0001'; end if;
+  if p_end is null then raise exception 'End date is not valid.' using errcode = 'P0001'; end if;
+  if p_end < p_start then raise exception 'End date cannot be before the start date.' using errcode = 'P0001'; end if;
   return v_name;
 end $$;
 
@@ -286,19 +286,19 @@ begin
     on conflict (ip, minute) do update set n = r.n + 1
     returning r.n into v_n;
   if v_n > 10 then
-    raise exception 'Terlalu banyak input. Coba lagi sebentar lagi.' using errcode = 'P0001';
+    raise exception 'Too many submissions. Please try again in a moment.' using errcode = 'P0001';
   end if;
 
   select * into v_ev from public.events where id = p_event_id;
   if not found then
-    raise exception 'Event tidak ditemukan.' using errcode = 'P0001';
+    raise exception 'Event not found.' using errcode = 'P0001';
   end if;
   if v_ev.closed_at is not null then
-    raise exception 'Event ini sudah ditutup oleh admin, input tidak bisa dikirim lagi.' using errcode = 'P0001';
+    raise exception 'This event has been closed by an admin. New entries are no longer accepted.' using errcode = 'P0001';
   elsif v_today < v_ev.start_date then
-    raise exception 'Event ini belum dibuka.' using errcode = 'P0001';
+    raise exception 'This event is not open yet.' using errcode = 'P0001';
   elsif v_today > v_ev.end_date then
-    raise exception 'Periode input event ini sudah berakhir.' using errcode = 'P0001';
+    raise exception 'The submission period for this event has ended.' using errcode = 'P0001';
   end if;
 
   v_name := public._check_entry(p_name, p_amount, p_transfer_date);
@@ -335,7 +335,7 @@ begin
 
   if (select count(*) from public.login_failures where ip = v_ip and at > now() - interval '15 minutes') >= 5
      or (select count(*) from public.login_failures where username = left(v_user, 60) and at > now() - interval '15 minutes') >= 20 then
-    return jsonb_build_object('ok', false, 'error', 'Terlalu banyak percobaan gagal. Coba lagi dalam beberapa menit.');
+    return jsonb_build_object('ok', false, 'error', 'Too many failed attempts. Please try again in a few minutes.');
   end if;
 
   if char_length(v_user) between 3 and 60 and char_length(v_pass) between 1 and 200 then
@@ -349,7 +349,7 @@ begin
 
   if not v_ok then
     insert into public.login_failures (ip, username) values (v_ip, left(v_user, 60));
-    return jsonb_build_object('ok', false, 'error', 'Username atau password salah.');
+    return jsonb_build_object('ok', false, 'error', 'Incorrect username or password.');
   end if;
 
   delete from public.login_failures where ip = v_ip and username = v_user;
@@ -400,10 +400,10 @@ begin
   perform public._admin_from_token(p_token);
   v_name := public._check_event(p_name, p_description, p_start_date, p_end_date);
   if p_id is null or p_id !~ '^[a-z0-9][a-z0-9-]{0,63}$' then
-    raise exception 'ID event tidak valid.' using errcode = 'P0001';
+    raise exception 'Invalid event ID.' using errcode = 'P0001';
   end if;
   if exists (select 1 from public.events where id = p_id) then
-    raise exception 'ID event sudah dipakai. Coba lagi.' using errcode = 'P0001';
+    raise exception 'That event ID is already in use. Please try again.' using errcode = 'P0001';
   end if;
   insert into public.events (id, name, description, start_date, end_date)
     values (p_id, v_name, btrim(coalesce(p_description, '')), p_start_date, p_end_date);
@@ -422,7 +422,7 @@ begin
   update public.events
      set name = v_name, description = btrim(coalesce(p_description, '')), start_date = p_start_date, end_date = p_end_date
    where id = p_id;
-  if not found then raise exception 'Event tidak ditemukan.' using errcode = 'P0001'; end if;
+  if not found then raise exception 'Event not found.' using errcode = 'P0001'; end if;
   return public._event_json(p_id, true);
 end $$;
 
@@ -436,7 +436,7 @@ begin
      set closed_at = case when p_closed then now() else null end,
          closed_by = case when p_closed then v_a.username else '' end
    where id = p_id;
-  if not found then raise exception 'Event tidak ditemukan.' using errcode = 'P0001'; end if;
+  if not found then raise exception 'Event not found.' using errcode = 'P0001'; end if;
   return public._event_json(p_id, true);
 end $$;
 
@@ -449,7 +449,7 @@ declare
 begin
   perform public._admin_from_token(p_token);
   if not exists (select 1 from public.events where id = p_event_id) then
-    raise exception 'Event tidak ditemukan.' using errcode = 'P0001';
+    raise exception 'Event not found.' using errcode = 'P0001';
   end if;
   v_name := public._check_entry(p_name, p_amount, p_transfer_date);
   insert into public.entries (event_id, name, amount, transfer_date) values (p_event_id, v_name, p_amount, p_transfer_date);
@@ -465,12 +465,12 @@ declare
 begin
   perform public._admin_from_token(p_token);
   if p_status is null or p_status not in ('pending', 'valid', 'invalid') then
-    raise exception 'Status tidak dikenal.' using errcode = 'P0001';
+    raise exception 'Unknown status.' using errcode = 'P0001';
   end if;
-  if char_length(v_note) > 200 then raise exception 'Catatan maksimal 200 karakter.' using errcode = 'P0001'; end if;
-  if v_note ~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]' then raise exception 'Catatan mengandung karakter yang tidak diizinkan.' using errcode = 'P0001'; end if;
+  if char_length(v_note) > 200 then raise exception 'Note must be at most 200 characters.' using errcode = 'P0001'; end if;
+  if v_note ~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]' then raise exception 'Note contains characters that are not allowed.' using errcode = 'P0001'; end if;
   update public.entries set status = p_status, admin_note = v_note where id = p_entry_id and event_id = p_event_id;
-  if not found then raise exception 'Entri tidak ditemukan.' using errcode = 'P0001'; end if;
+  if not found then raise exception 'Entry not found.' using errcode = 'P0001'; end if;
   return public._event_json(p_event_id, true);
 end $$;
 
@@ -480,7 +480,7 @@ as $$
 begin
   perform public._admin_from_token(p_token);
   delete from public.entries where id = p_entry_id and event_id = p_event_id;
-  if not found then raise exception 'Entri tidak ditemukan.' using errcode = 'P0001'; end if;
+  if not found then raise exception 'Entry not found.' using errcode = 'P0001'; end if;
   return public._event_json(p_event_id, true);
 end $$;
 
@@ -494,16 +494,16 @@ declare
   v_user text := lower(btrim(coalesce(p_username, '')));
 begin
   if v_user !~ '^[a-z0-9._@-]{3,60}$' then
-    raise exception 'Username harus 3-60 karakter: huruf kecil, angka, titik, garis bawah, strip, atau @.';
+    raise exception 'Username must be 3-60 characters: lowercase letters, digits, dot, underscore, dash or @.';
   end if;
   if char_length(coalesce(p_password, '')) < 8 then
-    raise exception 'Password minimal 8 karakter.';
+    raise exception 'Password must be at least 8 characters.';
   end if;
   if exists (select 1 from public.admins where username = v_user) then
-    raise exception 'Username "%" sudah ada. Pakai set_admin_password() untuk mengganti password.', v_user;
+    raise exception 'Username "%" already exists. Use set_admin_password() to change the password.', v_user;
   end if;
   insert into public.admins (username, password_hash) values (v_user, extensions.crypt(p_password, extensions.gen_salt('bf', 12)));
-  return 'Admin "' || v_user || '" dibuat.';
+  return 'Admin "' || v_user || '" created.';
 end $$;
 
 -- select public.set_admin_password('irene', 'password-baru');   (semua sesi admin itu otomatis dikeluarkan)
@@ -515,14 +515,14 @@ declare
   v_id   uuid;
 begin
   if char_length(coalesce(p_password, '')) < 8 then
-    raise exception 'Password minimal 8 karakter.';
+    raise exception 'Password must be at least 8 characters.';
   end if;
   update public.admins set password_hash = extensions.crypt(p_password, extensions.gen_salt('bf', 12))
    where username = v_user returning id into v_id;
-  if v_id is null then raise exception 'Username "%" tidak ditemukan.', v_user; end if;
+  if v_id is null then raise exception 'Username "%" not found.', v_user; end if;
   delete from public.admin_sessions where admin_id = v_id;
   delete from public.login_failures where username = v_user;
-  return 'Password "' || v_user || '" diganti.';
+  return 'Password for "' || v_user || '" changed.';
 end $$;
 
 -- select public.remove_admin('irene');
@@ -533,8 +533,8 @@ declare
   v_user text := lower(btrim(coalesce(p_username, '')));
 begin
   delete from public.admins where username = v_user;
-  if not found then raise exception 'Username "%" tidak ditemukan.', v_user; end if;
-  return 'Admin "' || v_user || '" dihapus.';
+  if not found then raise exception 'Username "%" not found.', v_user; end if;
+  return 'Admin "' || v_user || '" removed.';
 end $$;
 
 -- ---------- hak eksekusi fungsi: cabut semua, beri hanya yang perlu ----------

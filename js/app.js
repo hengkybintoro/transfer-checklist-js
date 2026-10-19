@@ -13,21 +13,21 @@ let lastHash = null;
 function resolve(hash) {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const [a, b, c, d] = parts;
-  if (parts.length === 0) return { title: 'Event Aktif', run: renderHome };
+  if (parts.length === 0) return { title: 'Open events', run: renderHome };
   if (a === 'e' && parts.length === 2 && validId(b)) return { title: 'Event', run: (ctx) => renderEvent(b, ctx) };
   if (a === 'admin') {
-    if (b === 'login' && parts.length === 2) return { title: 'Login Admin', admin: true, public: true, run: async () => renderLogin() };
-    if (parts.length === 1) return { title: 'Dashboard Admin', admin: true, run: renderDashboard };
-    if (b === 'new' && parts.length === 2) return { title: 'Event baru', admin: true, run: () => renderEventForm(null) };
-    if (b === 'e' && validId(c) && parts.length === 3) return { title: 'Verifikasi', admin: true, run: (ctx) => renderAdminEvent(c, ctx) };
+    if (b === 'login' && parts.length === 2) return { title: 'Admin sign in', admin: true, public: true, run: async () => renderLogin() };
+    if (parts.length === 1) return { title: 'Events', admin: true, run: renderDashboard };
+    if (b === 'new' && parts.length === 2) return { title: 'New event', admin: true, run: () => renderEventForm(null) };
+    if (b === 'e' && validId(c) && parts.length === 3) return { title: 'Manage event', admin: true, run: (ctx) => renderAdminEvent(c, ctx) };
     if (b === 'e' && validId(c) && d === 'edit' && parts.length === 4) return { title: 'Edit event', admin: true, run: () => renderEventForm(c) };
   }
-  return { title: 'Tidak ditemukan', run: async () => notFound() };
+  return { title: 'Not found', run: async () => notFound() };
 }
 
 function paint(content, route, keepFlash = false) {
   clear(root);
-  for (const node of layout(content, { admin: route.admin, keepFlash })) root.appendChild(node);
+  for (const node of layout(content, { admin: route.admin, keepFlash })) if (node) root.appendChild(node);
   document.title = `${route.title} · ${appName}`;
 }
 
@@ -50,13 +50,13 @@ async function render() {
   }
 
   const scrollY = sameRoute ? window.scrollY : 0;
-  if (!sameRoute) paint(h('p', { class: 'muted', role: 'status' }, 'Memuat…'), route, true);
+  if (!sameRoute) paint(h('p', { class: 'muted', role: 'status' }, 'Loading…'), route, true);
 
   let content;
   try {
     content = await route.run({ rerender: render });
   } catch (e) {
-    content = errorBox(e instanceof UserError ? e.message : 'Terjadi kesalahan tak terduga. Muat ulang halaman.');
+    content = errorBox(e instanceof UserError ? e.message : 'Something went wrong. Please reload the page.');
     if (!(e instanceof UserError)) console.error(e);
   }
   if (mine !== token) return; // navigasi lain sudah mengambil alih

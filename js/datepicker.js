@@ -1,7 +1,7 @@
 // Pemilih tanggal berbentuk kalender (tanpa dependensi, tanpa style inline sehingga lolos CSP).
-// Nilai selalu berupa tanggal ISO "YYYY-MM-DD". Pekan dimulai Senin, bahasa Indonesia.
+// Nilai selalu berupa tanggal ISO "YYYY-MM-DD". Pekan dimulai Senin; label berbahasa Inggris.
 import {
-  isDate, dateID, dateLong, MONTHS_LONG, WEEKDAYS_SHORT, monthGrid, addDays, addMonths, parseDateParts, makeDate,
+  isDate, formatDate, dateLong, MONTHS_LONG, WEEKDAYS_SHORT, monthGrid, addDays, addMonths, parseDateParts, makeDate,
 } from './core.js';
 import { h, clear } from './dom.js';
 
@@ -23,13 +23,13 @@ export function datePicker({ id, value = '', min = () => '', max = () => '', ran
   let isOpen = false;
 
   const field = h('input', {
-    type: 'text', id, class: 'dp-field', readonly: true, autocomplete: 'off', placeholder: 'Pilih tanggal',
+    type: 'text', id, class: 'dp-field', readonly: true, autocomplete: 'off', placeholder: 'Select a date',
     role: 'combobox', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': `${id}-pop`,
   });
-  const pop = h('div', { class: 'dp-pop', id: `${id}-pop`, role: 'dialog', 'aria-label': 'Pilih tanggal', hidden: true });
+  const pop = h('div', { class: 'dp-pop', id: `${id}-pop`, role: 'dialog', 'aria-label': 'Select a date', hidden: true });
   const wrap = h('div', { class: 'dp' }, field, pop);
 
-  const paint = () => { field.value = current ? dateID(current) : ''; };
+  const paint = () => { field.value = current ? formatDate(current) : ''; };
   paint();
 
   const inBounds = (iso) => {
@@ -63,9 +63,9 @@ export function datePicker({ id, value = '', min = () => '', max = () => '', ran
     for (let y = yFrom; y <= yTo; y++) years.push(y);
 
     const go = (n, sel) => { setView(addMonths(makeDate(view.y, view.m, 1), n)); render(sel); };
-    const monthSel = h('select', { class: 'dp-month', 'aria-label': 'Bulan', onchange: (e) => { view.m = Number(e.target.value); render('.dp-month'); } },
+    const monthSel = h('select', { class: 'dp-month', 'aria-label': 'Month', onchange: (e) => { view.m = Number(e.target.value); render('.dp-month'); } },
       MONTHS_LONG.map((name, i) => h('option', { value: String(i + 1), selected: i + 1 === view.m }, name)));
-    const yearSel = h('select', { class: 'dp-year', 'aria-label': 'Tahun', onchange: (e) => { view.y = Number(e.target.value); render('.dp-year'); } },
+    const yearSel = h('select', { class: 'dp-year', 'aria-label': 'Year', onchange: (e) => { view.y = Number(e.target.value); render('.dp-year'); } },
       years.map((y) => h('option', { value: String(y), selected: y === view.y }, String(y))));
 
     // sel yang boleh difokuskan lewat Tab: tanggal terfokus, bila tidak terlihat di bulan ini pakai tanggal pertama yang boleh dipilih
@@ -90,17 +90,17 @@ export function datePicker({ id, value = '', min = () => '', max = () => '', ran
     };
 
     pop.appendChild(h('div', { class: 'dp-head' },
-      h('button', { type: 'button', class: 'dp-nav dp-prev', 'aria-label': 'Bulan sebelumnya', onclick: () => go(-1, '.dp-prev') }, '‹'),
+      h('button', { type: 'button', class: 'dp-nav dp-prev', 'aria-label': 'Previous month', onclick: () => go(-1, '.dp-prev') }, '‹'),
       monthSel, yearSel,
-      h('button', { type: 'button', class: 'dp-nav dp-next', 'aria-label': 'Bulan berikutnya', onclick: () => go(1, '.dp-next') }, '›')));
+      h('button', { type: 'button', class: 'dp-nav dp-next', 'aria-label': 'Next month', onclick: () => go(1, '.dp-next') }, '›')));
     pop.appendChild(h('div', { class: 'dp-grid', role: 'grid' },
       WEEKDAYS_SHORT.map((d) => h('div', { class: 'dp-dow', 'aria-hidden': 'true' }, d)),
       grid.flat().map((iso) => (iso ? dayBtn(iso) : h('span', { class: 'dp-blank' })))));
     pop.appendChild(h('div', { class: 'dp-foot' },
-      h('button', { type: 'button', class: 'btn sm dp-today', disabled: !inBounds(t), onclick: () => choose(t) }, 'Hari ini'),
-      h('button', { type: 'button', class: 'btn sm dp-close', onclick: () => close(true) }, 'Tutup')));
+      h('button', { type: 'button', class: 'btn sm dp-today', disabled: !inBounds(t), onclick: () => choose(t) }, 'Today'),
+      h('button', { type: 'button', class: 'btn sm dp-close', onclick: () => close(true) }, 'Close')));
 
-    if (lo && !all.some(inBounds)) pop.appendChild(h('p', { class: 'hint' }, `Pilih tanggal ${dateID(lo)} atau sesudahnya.`));
+    if (lo && !all.some(inBounds)) pop.appendChild(h('p', { class: 'hint' }, `Choose ${formatDate(lo)} or later.`));
     if (focusSelector) pop.querySelector(focusSelector)?.focus();
   }
 
